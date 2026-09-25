@@ -43,6 +43,11 @@ except ImportError:
     # None so the other runners load; TTFluxKontextRunner.create_pipeline raises a
     # precise error if the Kontext runner is actually requested.
     Flux1KontextPipeline = None
+
+try:
+    from models.tt_dit.pipelines.fibo.pipeline_fibo import FiboPipeline
+except ImportError:
+    FiboPipeline = None
 from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3 import (
     MiniMaxH3Pipeline,
     resolve_mesh_preset,
@@ -110,6 +115,7 @@ dit_runner_log_map = {
     ModelRunners.TT_MINIMAX_H3_T2VA.value: "MiniMaxH3-T2VA",
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
+    ModelRunners.TT_FIBO.value: "FIBO",
     ModelRunners.SP_RUNNER.value: "SP-Runner",
 }
 
@@ -507,6 +513,39 @@ class TTQwenImageRunner(TTDiTRunner):
 
     def get_pipeline_device_params(self):
         return {"trace_region_size": 47000000}
+
+
+# FIBO is trained on structured JSON prompts. The pipeline is built with
+# FIBO-vlm, which writes that JSON from the request's natural-language prompt,
+# so the inherited run() serves plain text prompts.
+class TTFiboRunner(TTDiTRunner):
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+
+    def create_pipeline(self):
+        if FiboPipeline is None:
+            raise ImportError(
+                "FIBO requires models.tt_dit.pipelines.fibo.pipeline_fibo, "
+                "which this tt-metal build does not provide. Use a tt-metal "
+                "revision that ships the FIBO pipeline to run this model."
+            )
+        try:
+            return FiboPipeline.create_pipeline(
+                mesh_device=self.ttnn_device,
+                checkpoint_name=SupportedModels.FIBO.value,
+                vlm_checkpoint_name=SupportedModels.FIBO_VLM.value,
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger,
+                self.device_id,
+                "FIBO pipeline creation failed",
+                e,
+            )
+            raise
+
+    def get_pipeline_device_params(self):
+        return {"l1_small_size": 32768, "trace_region_size": 256000000}
 
 
 class TTMochi1Runner(TTDiTRunner):
