@@ -43,6 +43,9 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_FIBO: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTFiboRunner"]
     ).TTFiboRunner(wid),
+    ModelRunners.TT_FIBO_EDIT: lambda wid: __import__(
+        "tt_model_runners.dit_runners", fromlist=["TTFiboEditRunner"]
+    ).TTFiboEditRunner(wid),
     ModelRunners.TT_MOCHI_1: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTMochi1Runner"]
     ).TTMochi1Runner(wid),

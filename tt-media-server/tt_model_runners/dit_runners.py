@@ -5,6 +5,7 @@
 import asyncio
 import base64
 import io
+import json
 import os
 import uuid
 from abc import abstractmethod
@@ -116,6 +117,7 @@ dit_runner_log_map = {
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
     ModelRunners.TT_FIBO.value: "FIBO",
+    ModelRunners.TT_FIBO_EDIT.value: "FIBO-Edit",
     ModelRunners.SP_RUNNER.value: "SP-Runner",
 }
 
@@ -546,6 +548,88 @@ class TTFiboRunner(TTDiTRunner):
 
     def get_pipeline_device_params(self):
         return {"l1_small_size": 32768, "trace_region_size": 256000000}
+
+
+# FIBO Edit edits the request's image by the request's prompt, an editing
+# instruction. FIBO-edit-vlm writes FIBO Edit's structured JSON prompt from both.
+# The output size is the pipeline's, fixed when it is traced, so the request's
+# width and height are ignored and the image is stretched to that size. Masks
+# are not supported.
+class TTFiboEditRunner(TTDiTRunner):
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        self.image_manager = ImageManager("img")
+
+    def create_pipeline(self):
+        if FiboPipeline is None:
+            raise ImportError(
+                "FIBO Edit requires models.tt_dit.pipelines.fibo.pipeline_fibo, "
+                "which this tt-metal build does not provide. Use a tt-metal "
+                "revision that ships the FIBO pipeline to run this model."
+            )
+        try:
+            return FiboPipeline.create_pipeline(
+                mesh_device=self.ttnn_device,
+                checkpoint_name=SupportedModels.FIBO_EDIT.value,
+                vlm_checkpoint_name=SupportedModels.FIBO_EDIT_VLM.value,
+                edit=True,
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger,
+                self.device_id,
+                "FIBO Edit pipeline creation failed",
+                e,
+            )
+            raise
+
+    def get_pipeline_device_params(self):
+        return {"l1_small_size": 32768, "trace_region_size": 256000000}
+
+    def run(self, requests: list[ImageGenerateRequest]):
+        request = requests[0]
+        prompt = request.prompt
+        use_vlm = True
+
+        image_b64 = getattr(request, "image", None)
+        if image_b64 is not None:
+            image = self.image_manager.base64_to_pil_image(image_b64, target_mode="RGB")
+        elif self._warming_up:
+            # The warmup request carries no image. Its prompt bypasses the VLM,
+            # whose sampled JSON may lack the edit_instruction the pipeline
+            # requires; the pipeline warmed the VLM up when it was created.
+            image = Image.new("RGB", (self.pipeline._width, self.pipeline._height))
+            prompt = json.dumps({"edit_instruction": request.prompt})
+            use_vlm = False
+        else:
+            raise ValueError("FIBO Edit requires an image")
+
+        recorder = (
+            None
+            if self._warming_up
+            else ImageStageRecorder(
+                model_type=self.settings.model_runner,
+                device_id=self.device_id,
+                sampler=sampler_name(self.pipeline),
+                batch=1,
+            )
+        )
+        images = self.pipeline(
+            prompts=[prompt],
+            images=[image],
+            use_vlm=use_vlm,
+            negative_prompts=(
+                [request.negative_prompt]
+                if request.negative_prompt is not None
+                else None
+            ),
+            num_inference_steps=request.num_inference_steps,
+            seed=int(request.seed or 0),
+            on_event=recorder,
+        )
+        if recorder is not None:
+            recorder.flush(images)
+        return images
 
 
 class TTMochi1Runner(TTDiTRunner):

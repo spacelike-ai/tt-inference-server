@@ -314,6 +314,34 @@ templates:
       default_impl: true
   status: EXPERIMENTAL
 
+# Served on /edits: the request's prompt is an editing instruction, which the
+# pipeline's briaai/FIBO-edit-vlm turns into FIBO Edit's structured JSON prompt
+# together with the request's image.
+- weights:
+    - briaai/fibo-edit
+  model_display_name: FIBO-Edit
+  impl: tt_transformers
+  min_disk_gb: 60
+  min_ram_gb: 16
+  model_type: IMAGE
+  inference_engine: MEDIA
+  env_vars:
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
+  device_model_specs:
+    - device: T3K
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
+
 - weights:
     - Tongyi-MAI/Z-Image-Turbo
   impl: tt_transformers

@@ -11,6 +11,8 @@ from pydantic import Field, field_validator
 # Runners whose edit path requires a mask (mask-based inpainting). Other runners
 # (e.g. FLUX.1-Kontext, which edits by instruction only) accept a missing mask.
 _MASK_REQUIRED_RUNNERS = {"tt-sdxl-edit"}
+# Runners that cannot take a mask (e.g. FIBO Edit) reject one.
+_MASK_REJECTED_RUNNERS = {"tt-fibo-edit"}
 
 
 class ImageEditRequest(ImageToImageRequest):
@@ -27,4 +29,6 @@ class ImageEditRequest(ImageToImageRequest):
         # preprocessing (500). Kontext and other runners still allow None.
         if v is None and get_settings().model_runner in _MASK_REQUIRED_RUNNERS:
             raise ValueError(f"mask is required for {get_settings().model_runner}")
+        if v is not None and get_settings().model_runner in _MASK_REJECTED_RUNNERS:
+            raise ValueError(f"mask is not supported for {get_settings().model_runner}")
         return v

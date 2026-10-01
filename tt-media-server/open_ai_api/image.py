@@ -259,7 +259,10 @@ router = APIRouter()
 
 if settings.model_runner == ModelRunners.TT_SDXL_IMAGE_TO_IMAGE.value:
     router.include_router(image_to_image_router)
-elif settings.model_runner == ModelRunners.TT_SDXL_EDIT.value:
+elif settings.model_runner in (
+    ModelRunners.TT_SDXL_EDIT.value,
+    ModelRunners.TT_FIBO_EDIT.value,
+):
     router.include_router(edit_image_router)
 elif settings.model_runner == ModelRunners.TT_FLUX_1_KONTEXT_DEV.value:
     # Reuse the shared endpoints for text->image (/generations) and instruction
