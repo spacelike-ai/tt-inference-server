@@ -7,6 +7,7 @@ import base64
 import io
 import json
 import os
+import secrets
 import uuid
 from abc import abstractmethod
 from pathlib import Path
@@ -524,6 +525,11 @@ class TTFiboRunner(TTDiTRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
 
+    def run(self, requests: list[ImageGenerateRequest]):
+        if requests[0].seed is None:
+            requests[0].seed = secrets.randbits(32)
+        return super().run(requests)
+
     def create_pipeline(self):
         if FiboPipeline is None:
             raise ImportError(
@@ -624,7 +630,9 @@ class TTFiboEditRunner(TTDiTRunner):
                 else None
             ),
             num_inference_steps=request.num_inference_steps,
-            seed=int(request.seed or 0),
+            seed=(
+                int(request.seed) if request.seed is not None else secrets.randbits(32)
+            ),
             on_event=recorder,
         )
         if recorder is not None:
