@@ -14,6 +14,36 @@ _FLUX_MIN_INFERENCE_STEPS = 4
 _DEFAULT_MIN_INFERENCE_STEPS = 12
 _SKIP_STEP_VALIDATION_RUNNERS = {"tt-z-image-turbo"}
 
+# The (width, height) pairs each runner's pipeline supports: _RESOLUTIONS and
+# _EDIT_RESOLUTIONS in tt-metal's models/tt_dit/pipelines/qwenimage/pipeline_qwenimage.py.
+# A mesh's preset may support only some of them (T3K: 1024x1024).
+_QWEN_IMAGE_RESOLUTIONS = {
+    (1024, 1024),
+    (1344, 1344),
+    (1664, 928),
+    (928, 1664),
+    (1472, 1120),
+    (1120, 1472),
+    (1600, 1056),
+    (1056, 1600),
+}
+_QWEN_IMAGE_EDIT_RESOLUTIONS = {
+    (1024, 1024),
+    (1376, 768),
+    (768, 1376),
+    (1184, 896),
+    (896, 1184),
+    (1248, 832),
+    (832, 1248),
+}
+_RUNNER_RESOLUTIONS = {
+    "tt-qwen-image": _QWEN_IMAGE_RESOLUTIONS,
+    "tt-qwen-image-2512": _QWEN_IMAGE_RESOLUTIONS,
+    "tt-qwen-image-edit": _QWEN_IMAGE_EDIT_RESOLUTIONS,
+    "tt-qwen-image-edit-2509": _QWEN_IMAGE_EDIT_RESOLUTIONS,
+    "tt-qwen-image-edit-2511": _QWEN_IMAGE_EDIT_RESOLUTIONS,
+}
+
 
 class BaseImageRequest(BaseRequest):
     prompt: str
@@ -28,8 +58,9 @@ class BaseImageRequest(BaseRequest):
 
     # Optional output resolution (width/height). Runners that support per-request
     # resolution (e.g. FLUX.1-Kontext) honor these; others ignore them.
-    width: Optional[int] = Field(default=None, ge=256, le=1536)
-    height: Optional[int] = Field(default=None, ge=256, le=1536)
+    # The upper bound is the widest Qwen-Image resolution, 1664 x 928.
+    width: Optional[int] = Field(default=None, ge=256, le=1664)
+    height: Optional[int] = Field(default=None, ge=256, le=1664)
 
     # Private fields for internal processing
     _segments: Optional[List[int]] = PrivateAttr(default=None)
@@ -59,6 +90,16 @@ class BaseImageRequest(BaseRequest):
         # height (and vice versa), silently changing the aspect ratio.
         if (self.width is None) != (self.height is None):
             raise ValueError("width and height must be provided together")
+        resolutions = _RUNNER_RESOLUTIONS.get(get_settings().model_runner)
+        if (
+            self.width is not None
+            and resolutions is not None
+            and (self.width, self.height) not in resolutions
+        ):
+            raise ValueError(
+                f"unsupported size {self.width}x{self.height}, "
+                f"supported are {sorted(resolutions)}"
+            )
         return self
 
     @field_validator("image_return_format")

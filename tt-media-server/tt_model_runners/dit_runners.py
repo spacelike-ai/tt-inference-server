@@ -6,6 +6,7 @@ import asyncio
 import base64
 import io
 import os
+import secrets
 import uuid
 from abc import abstractmethod
 from pathlib import Path
@@ -114,6 +115,9 @@ dit_runner_log_map = {
     ModelRunners.TT_MINIMAX_H3_T2VA.value: "MiniMaxH3-T2VA",
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
+    ModelRunners.TT_QWEN_IMAGE_EDIT.value: "Qwen-Image-Edit",
+    ModelRunners.TT_QWEN_IMAGE_EDIT_2509.value: "Qwen-Image-Edit-2509",
+    ModelRunners.TT_QWEN_IMAGE_EDIT_2511.value: "Qwen-Image-Edit-2511",
     ModelRunners.SP_RUNNER.value: "SP-Runner",
 }
 
@@ -490,9 +494,19 @@ class TTMotifImage6BPreviewRunner(TTDiTRunner):
 
 
 # Runner for Qwen-Image and Qwen-Image-2512. Model weights from settings.model_weights_path determine the exact model variant.
+# A request with an image and a mask inpaints: the white part of the mask is regenerated.
 class TTQwenImageRunner(TTDiTRunner):
+    # Per-chip trace region bytes. The warm-up traces every resolution of the mesh's
+    # preset. Measured in tt-metal's models/tt_dit/tests/models/qwenimage/device_params.py:
+    # BH 2x2 759 MB, BH 2x4 738 MB, BH 4x8 779 MB, WH 2x4 (1024x1024 only) 108 MB,
+    # WH 4x8 555 MB.
+    _TRACE_REGION_BH = 790_000_000
+    _TRACE_REGION_WH_LARGE_MESH = 560_000_000
+    _TRACE_REGION_WH_SMALL_MESH = 110_000_000
+
     def __init__(self, device_id: str):
         super().__init__(device_id)
+        self.image_manager = ImageManager("img")
 
     def create_pipeline(self):
         try:
@@ -510,7 +524,99 @@ class TTQwenImageRunner(TTDiTRunner):
             raise
 
     def get_pipeline_device_params(self):
-        return {"trace_region_size": 47000000}
+        if is_blackhole():
+            trace_region_size = self._TRACE_REGION_BH
+        elif is_large_mesh(self.settings.device_mesh_shape):
+            trace_region_size = self._TRACE_REGION_WH_LARGE_MESH
+        else:
+            trace_region_size = self._TRACE_REGION_WH_SMALL_MESH
+        return {"l1_small_size": 32768, "trace_region_size": trace_region_size}
+
+    def _input_image(self, request) -> Image.Image | None:
+        image_b64 = getattr(request, "image", None)
+        if image_b64 is None:
+            return None
+        return self.image_manager.base64_to_pil_image(image_b64, target_mode="RGB")
+
+    def _pipeline_inputs(self, request) -> dict:
+        image = self._input_image(request)
+        if image is None:
+            return {}
+        inputs = {"image": image}
+        mask_b64 = getattr(request, "mask", None)
+        if mask_b64 is not None:
+            inputs["mask_image"] = self.image_manager.base64_to_pil_image(
+                mask_b64, target_mode="L"
+            )
+            inputs["strength"] = request.strength
+        return inputs
+
+    @log_execution_time(
+        f"{dit_runner_log_map[get_settings().model_runner]} inference",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
+    def run(self, requests: list[ImageGenerateRequest]):
+        request = requests[0]
+        inputs = self._pipeline_inputs(request)
+        # The request's default guidance_scale (5.0) is not Qwen's (4.0), so
+        # only a value the client set overrides the pipeline's.
+        if "guidance_scale" in request.model_fields_set:
+            inputs["cfg_scale"] = request.guidance_scale
+        recorder = (
+            None
+            if self._warming_up
+            else ImageStageRecorder(
+                model_type=self.settings.model_runner,
+                device_id=self.device_id,
+                sampler=sampler_name(self.pipeline),
+                batch=1,
+            )
+        )
+        images = self.pipeline(
+            prompts=[request.prompt],
+            negative_prompts=(
+                [request.negative_prompt]
+                if request.negative_prompt is not None
+                else None
+            ),
+            num_inference_steps=request.num_inference_steps,
+            # Without a seed, the images of a multi-image request would be identical.
+            seed=(
+                int(request.seed) if request.seed is not None else secrets.randbits(32)
+            ),
+            # Without a requested size, the pipeline sizes an inpainting or edit
+            # output from the input image.
+            width=getattr(request, "width", None),
+            height=getattr(request, "height", None),
+            on_event=recorder,
+            **inputs,
+        )
+        if recorder is not None:
+            recorder.flush(images)
+        return images
+
+
+# Runner for Qwen-Image-Edit, -2509 and -2511, which edit the request's image by
+# the request's prompt, an editing instruction. The output defaults to the
+# pipeline's resolution closest to the image in aspect ratio. With a mask, only
+# its white part is edited, and the output has the image's size.
+class TTQwenImageEditRunner(TTQwenImageRunner):
+    # From tt-metal's models/tt_dit/tests/models/qwenimage/device_params.py. Measured
+    # per chip on WH 2x4: Edit 95 MB, Edit-2509 187 MB. The edit tests pass on WH 4x8
+    # and on BH with these sizes, which are not measured there.
+    _TRACE_REGION_BH = 790_000_000
+    _TRACE_REGION_WH_LARGE_MESH = 600_000_000
+    _TRACE_REGION_WH_SMALL_MESH = 200_000_000
+
+    def _input_image(self, request) -> Image.Image:
+        image = super()._input_image(request)
+        if image is not None:
+            return image
+        if self._warming_up:
+            # The warmup request carries no image.
+            return Image.new("RGB", (1024, 1024))
+        raise ValueError("Qwen-Image-Edit requires an image")
 
 
 class TTMochi1Runner(TTDiTRunner):

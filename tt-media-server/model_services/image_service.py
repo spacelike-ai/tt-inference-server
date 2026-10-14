@@ -61,8 +61,13 @@ class ImageService(BaseService):
         self, original_request: ImageGenerateRequest, segment, segment_index: int
     ) -> ImageGenerateRequest:
         """Create a request for generating a single image with incremented seed"""
-        field_values = original_request.model_dump()
-        new_request = type(original_request)(**field_values)
+        # Keeps which fields the client set, which rebuilding from model_dump()
+        # would mark as all set. Private attributes start from their defaults,
+        # so each segment gets its own _task_id.
+        new_request = type(original_request).model_construct(
+            _fields_set=original_request.model_fields_set,
+            **original_request.model_dump(),
+        )
 
         new_request.number_of_images = 1
 

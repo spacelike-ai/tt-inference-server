@@ -20,6 +20,9 @@ class SupportedModels(Enum):
     MOTIF_IMAGE_6B_PREVIEW = "Motif-Technologies/Motif-Image-6B-Preview"
     QWEN_IMAGE = "Qwen/Qwen-Image"
     QWEN_IMAGE_2512 = "Qwen/Qwen-Image-2512"
+    QWEN_IMAGE_EDIT = "Qwen/Qwen-Image-Edit"
+    QWEN_IMAGE_EDIT_2509 = "Qwen/Qwen-Image-Edit-2509"
+    QWEN_IMAGE_EDIT_2511 = "Qwen/Qwen-Image-Edit-2511"
     MOCHI_1 = "genmo/mochi-1-preview"
     WAN_2_2 = "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
     WAN_2_2_T2V_PRODIA = "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
@@ -72,6 +75,9 @@ class ModelNames(Enum):
     MOTIF_IMAGE_6B_PREVIEW = "Motif-Image-6B-Preview"
     QWEN_IMAGE = "Qwen-Image"
     QWEN_IMAGE_2512 = "Qwen-Image-2512"
+    QWEN_IMAGE_EDIT = "Qwen-Image-Edit"
+    QWEN_IMAGE_EDIT_2509 = "Qwen-Image-Edit-2509"
+    QWEN_IMAGE_EDIT_2511 = "Qwen-Image-Edit-2511"
     MOCHI_1 = "mochi-1-preview"
     WAN_2_2 = "Wan2.2-T2V-A14B-Diffusers"
     WAN_2_2_T2V_PRODIA = "Wan2.2-T2V-A14B-Prodia"
@@ -126,6 +132,9 @@ class ModelRunners(Enum):
     TT_MOTIF_IMAGE_6B_PREVIEW = "tt-motif-image-6b-preview"
     TT_QWEN_IMAGE = "tt-qwen-image"
     TT_QWEN_IMAGE_2512 = "tt-qwen-image-2512"
+    TT_QWEN_IMAGE_EDIT = "tt-qwen-image-edit"
+    TT_QWEN_IMAGE_EDIT_2509 = "tt-qwen-image-edit-2509"
+    TT_QWEN_IMAGE_EDIT_2511 = "tt-qwen-image-edit-2511"
     TT_MOCHI_1 = "tt-mochi-1"
     TT_WAN_2_2 = "tt-wan2.2"
     TT_WAN_2_2_T2V_PRODIA = "tt-wan2.2-t2v-prodia"
@@ -194,6 +203,9 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW,
         ModelRunners.TT_QWEN_IMAGE,
         ModelRunners.TT_QWEN_IMAGE_2512,
+        ModelRunners.TT_QWEN_IMAGE_EDIT,
+        ModelRunners.TT_QWEN_IMAGE_EDIT_2509,
+        ModelRunners.TT_QWEN_IMAGE_EDIT_2511,
         ModelRunners.TT_XLA_SDXL,
         ModelRunners.TT_Z_IMAGE_TURBO,
     },
@@ -342,6 +354,9 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW: {ModelNames.MOTIF_IMAGE_6B_PREVIEW},
     ModelRunners.TT_QWEN_IMAGE: {ModelNames.QWEN_IMAGE},
     ModelRunners.TT_QWEN_IMAGE_2512: {ModelNames.QWEN_IMAGE_2512},
+    ModelRunners.TT_QWEN_IMAGE_EDIT: {ModelNames.QWEN_IMAGE_EDIT},
+    ModelRunners.TT_QWEN_IMAGE_EDIT_2509: {ModelNames.QWEN_IMAGE_EDIT_2509},
+    ModelRunners.TT_QWEN_IMAGE_EDIT_2511: {ModelNames.QWEN_IMAGE_EDIT_2511},
     ModelRunners.TT_MOCHI_1: {ModelNames.MOCHI_1},
     ModelRunners.TT_WAN_2_2: {ModelNames.WAN_2_2},
     ModelRunners.TT_WAN_2_2_T2V_PRODIA: {ModelNames.WAN_2_2_T2V_PRODIA},
@@ -1013,6 +1028,24 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         "max_batch_size": 1,
     },
+    (ModelRunners.TT_QWEN_IMAGE, DeviceTypes.P300X2): {
+        "device_mesh_shape": (2, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN_IMAGE, DeviceTypes.P150X8): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_8_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN_IMAGE, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+    },
     (ModelRunners.TT_QWEN_IMAGE_2512, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
@@ -1020,6 +1053,114 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.TT_QWEN_IMAGE_2512, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN_IMAGE_2512, DeviceTypes.P300X2): {
+        "device_mesh_shape": (2, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN_IMAGE_2512, DeviceTypes.P150X8): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_8_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN_IMAGE_2512, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN_IMAGE_EDIT, DeviceTypes.T3K): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN_IMAGE_EDIT, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN_IMAGE_EDIT, DeviceTypes.P300X2): {
+        "device_mesh_shape": (2, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN_IMAGE_EDIT, DeviceTypes.P150X8): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_8_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN_IMAGE_EDIT, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN_IMAGE_EDIT_2509, DeviceTypes.T3K): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN_IMAGE_EDIT_2509, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN_IMAGE_EDIT_2509, DeviceTypes.P300X2): {
+        "device_mesh_shape": (2, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN_IMAGE_EDIT_2509, DeviceTypes.P150X8): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_8_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN_IMAGE_EDIT_2509, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN_IMAGE_EDIT_2511, DeviceTypes.T3K): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN_IMAGE_EDIT_2511, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN_IMAGE_EDIT_2511, DeviceTypes.P300X2): {
+        "device_mesh_shape": (2, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN_IMAGE_EDIT_2511, DeviceTypes.P150X8): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_8_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN_IMAGE_EDIT_2511, DeviceTypes.BLACKHOLE_GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,

@@ -64,7 +64,7 @@ _BATCH_BUCKETS = (1, 2, 3, 4, 8, float("inf"))
 # same expression as the observation so each lands exactly on its bound. Round
 # numbers do not work: 1024x1024 is 1.048576 MP, and with `value <= le` a 1.0
 # bound would push it into the next bucket. width/height are validated to
-# 256..1536; the ladder runs past that so raising the cap degrades to coarse
+# 256..1664; the ladder runs past that so raising the cap degrades to coarse
 # rather than clipping into +Inf.
 _PIXELS_PER_MEGAPIXEL = 1_000_000
 _BUCKET_RESOLUTIONS = (

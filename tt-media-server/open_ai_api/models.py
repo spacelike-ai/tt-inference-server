@@ -10,6 +10,7 @@ from domain.base_request import BaseRequest
 from domain.image_edit_request import ImageEditRequest
 from domain.image_generate_request import BaseImageRequest, ImageGenerateRequest
 from domain.image_to_image_request import ImageToImageRequest
+from domain.qwen_image_request import QwenImageRequest
 from fastapi import APIRouter
 
 router = APIRouter()
@@ -22,8 +23,11 @@ MODEL_RUNNER_TO_REQUEST_MAP = {
     ModelRunners.TT_FLUX_1_DEV.value: BaseImageRequest,
     ModelRunners.TT_FLUX_1_SCHNELL.value: BaseImageRequest,
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW.value: BaseImageRequest,
-    ModelRunners.TT_QWEN_IMAGE.value: BaseImageRequest,
-    ModelRunners.TT_QWEN_IMAGE_2512.value: BaseImageRequest,
+    ModelRunners.TT_QWEN_IMAGE.value: QwenImageRequest,
+    ModelRunners.TT_QWEN_IMAGE_2512.value: QwenImageRequest,
+    ModelRunners.TT_QWEN_IMAGE_EDIT.value: ImageEditRequest,
+    ModelRunners.TT_QWEN_IMAGE_EDIT_2509.value: ImageEditRequest,
+    ModelRunners.TT_QWEN_IMAGE_EDIT_2511.value: ImageEditRequest,
 }
 
 V1_MODEL_CREATED_TIMESTAMP = 1700000000

@@ -442,6 +442,10 @@ IMAGE_EVAL_DISPATCH: dict[str, ImageEvalFn] = {
     "tt-sdxl-trace": _run_image_generation_eval_test,
     "tt-sdxl-image-to-image": _run_img2img_generation_eval,
     "tt-sdxl-edit": _run_inpainting_generation_eval,
+    # The Qwen-Image-Edit runners serve /edits only; a masked edit is their inpainting.
+    "tt-qwen-image-edit": _run_inpainting_generation_eval,
+    "tt-qwen-image-edit-2509": _run_inpainting_generation_eval,
+    "tt-qwen-image-edit-2511": _run_inpainting_generation_eval,
     "tt-sd3.5": _run_image_generation_eval_test,
     "tt-flux.1-dev": _run_image_generation_eval_test,
     "tt-flux.1-schnell": _run_image_generation_eval_test,

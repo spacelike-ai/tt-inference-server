@@ -6,11 +6,26 @@ from typing import Optional
 
 from config.settings import get_settings
 from domain.image_to_image_request import ImageToImageRequest
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 # Runners whose edit path requires a mask (mask-based inpainting). Other runners
 # (e.g. FLUX.1-Kontext, which edits by instruction only) accept a missing mask.
-_MASK_REQUIRED_RUNNERS = {"tt-sdxl-edit"}
+_MASK_REQUIRED_RUNNERS = {"tt-sdxl-edit", "tt-qwen-image", "tt-qwen-image-2512"}
+# Runners whose inpainting skips the first (1 - strength) of the denoising steps,
+# rounded as diffusers does, and rejects a strength that leaves none.
+_STRENGTH_SKIPS_STEPS_RUNNERS = {
+    "tt-qwen-image",
+    "tt-qwen-image-2512",
+    "tt-qwen-image-edit",
+    "tt-qwen-image-edit-2509",
+    "tt-qwen-image-edit-2511",
+}
+# Runners whose masked edit generates at the input image's size.
+_MASKED_EDIT_FIXED_SIZE_RUNNERS = {
+    "tt-qwen-image-edit",
+    "tt-qwen-image-edit-2509",
+    "tt-qwen-image-edit-2511",
+}
 
 
 class ImageEditRequest(ImageToImageRequest):
@@ -28,3 +43,27 @@ class ImageEditRequest(ImageToImageRequest):
         if v is None and get_settings().model_runner in _MASK_REQUIRED_RUNNERS:
             raise ValueError(f"mask is required for {get_settings().model_runner}")
         return v
+
+    @model_validator(mode="after")
+    def _check_inpainting_parameters(self):
+        model_runner = get_settings().model_runner
+        if self.mask is not None and model_runner in _STRENGTH_SKIPS_STEPS_RUNNERS:
+            steps = self.num_inference_steps
+            if self.strength is None or (
+                steps is not None
+                and int(steps - min(steps * self.strength, steps)) >= steps
+            ):
+                raise ValueError(
+                    f"strength {self.strength} leaves no denoising steps for "
+                    f"{model_runner}"
+                )
+        if (
+            self.mask is not None
+            and self.width is not None
+            and model_runner in _MASKED_EDIT_FIXED_SIZE_RUNNERS
+        ):
+            raise ValueError(
+                f"{model_runner} edits with a mask at the input image's size; "
+                "omit width and height"
+            )
+        return self
