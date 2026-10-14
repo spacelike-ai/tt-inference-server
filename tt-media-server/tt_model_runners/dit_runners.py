@@ -602,12 +602,9 @@ class TTQwenImageRunner(TTDiTRunner):
 # pipeline's resolution closest to the image in aspect ratio. With a mask, only
 # its white part is edited, and the output has the image's size.
 class TTQwenImageEditRunner(TTQwenImageRunner):
-    # From tt-metal's models/tt_dit/tests/models/qwenimage/device_params.py. Measured
-    # per chip on WH 2x4: Edit 95 MB, Edit-2509 187 MB. The edit tests pass on WH 4x8
-    # and on BH with these sizes, which are not measured there.
+    # Blackhole only: on WH 2x4 a second edit call runs out of DRAM. The BH size is
+    # from tt-metal's models/tt_dit/tests/models/qwenimage/device_params.py.
     _TRACE_REGION_BH = 790_000_000
-    _TRACE_REGION_WH_LARGE_MESH = 600_000_000
-    _TRACE_REGION_WH_SMALL_MESH = 200_000_000
 
     def _input_image(self, request) -> Image.Image:
         image = super()._input_image(request)

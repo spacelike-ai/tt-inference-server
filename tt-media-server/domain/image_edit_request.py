@@ -20,7 +20,8 @@ _STRENGTH_SKIPS_STEPS_RUNNERS = {
     "tt-qwen-image-edit-2509",
     "tt-qwen-image-edit-2511",
 }
-# Runners whose masked edit generates at the input image's size.
+# Runners whose masked edit generates at the configured resolution nearest the
+# input image's aspect ratio, so the request can't choose a size.
 _MASKED_EDIT_FIXED_SIZE_RUNNERS = {
     "tt-qwen-image-edit",
     "tt-qwen-image-edit-2509",
@@ -63,7 +64,7 @@ class ImageEditRequest(ImageToImageRequest):
             and model_runner in _MASKED_EDIT_FIXED_SIZE_RUNNERS
         ):
             raise ValueError(
-                f"{model_runner} edits with a mask at the input image's size; "
-                "omit width and height"
+                f"{model_runner} edits with a mask at the configured resolution "
+                "nearest the input image's aspect ratio; omit width and height"
             )
         return self

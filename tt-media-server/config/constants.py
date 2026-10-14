@@ -1076,18 +1076,6 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         "max_batch_size": 1,
     },
-    (ModelRunners.TT_QWEN_IMAGE_EDIT, DeviceTypes.T3K): {
-        "device_mesh_shape": (2, 4),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_QWEN_IMAGE_EDIT, DeviceTypes.GALAXY): {
-        "device_mesh_shape": (4, 8),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
-        "max_batch_size": 1,
-    },
     (ModelRunners.TT_QWEN_IMAGE_EDIT, DeviceTypes.P300X2): {
         "device_mesh_shape": (2, 2),
         "is_galaxy": False,
@@ -1106,18 +1094,6 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         "max_batch_size": 1,
     },
-    (ModelRunners.TT_QWEN_IMAGE_EDIT_2509, DeviceTypes.T3K): {
-        "device_mesh_shape": (2, 4),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_QWEN_IMAGE_EDIT_2509, DeviceTypes.GALAXY): {
-        "device_mesh_shape": (4, 8),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
-        "max_batch_size": 1,
-    },
     (ModelRunners.TT_QWEN_IMAGE_EDIT_2509, DeviceTypes.P300X2): {
         "device_mesh_shape": (2, 2),
         "is_galaxy": False,
@@ -1131,18 +1107,6 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.TT_QWEN_IMAGE_EDIT_2509, DeviceTypes.BLACKHOLE_GALAXY): {
-        "device_mesh_shape": (4, 8),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_QWEN_IMAGE_EDIT_2511, DeviceTypes.T3K): {
-        "device_mesh_shape": (2, 4),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_QWEN_IMAGE_EDIT_2511, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,

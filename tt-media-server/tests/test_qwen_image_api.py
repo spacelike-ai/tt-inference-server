@@ -30,13 +30,8 @@ _EDIT_RUNNERS = [
     "tt-qwen-image-edit-2509",
     "tt-qwen-image-edit-2511",
 ]
-_DEVICES = [
-    DeviceTypes.T3K,
-    DeviceTypes.GALAXY,
-    DeviceTypes.P300X2,
-    DeviceTypes.P150X8,
-    DeviceTypes.BLACKHOLE_GALAXY,
-]
+_BH_DEVICES = [DeviceTypes.P300X2, DeviceTypes.P150X8, DeviceTypes.BLACKHOLE_GALAXY]
+_WH_DEVICES = [DeviceTypes.T3K, DeviceTypes.GALAXY]
 
 
 def _set_runner(monkeypatch, runner: str) -> None:
@@ -131,12 +126,17 @@ def test_segment_requests(monkeypatch):
         prompt="a cat", image=_B64, mask=_B64, number_of_images=2, seed=3
     )
     request._segments = [0, 1]
+    fields_set = set(request.model_fields_set)
     segments = [
         ImageService.create_segment_request(None, request, i, i) for i in range(2)
     ]
     # Each segment is a request of its own, waited for under its own task id.
     assert len({request._task_id} | {s._task_id for s in segments}) == 3
-    for i, segment in enumerate(segments):
+    # Setting a field on one segment marks it set on that segment only.
+    segments[0].guidance_scale = 2.0
+    assert request.model_fields_set == fields_set
+    assert "guidance_scale" not in segments[1].model_fields_set
+    for i, segment in enumerate(segments[1:], start=1):
         assert type(segment) is ImageEditRequest
         assert segment._segments is None and segment._start_event is None
         assert "guidance_scale" not in segment.model_fields_set
@@ -169,8 +169,11 @@ def test_edit_serves_edits_only(monkeypatch, runner):
     assert _routes(monkeypatch, runner) == {"/edits"}
 
 
-@pytest.mark.parametrize("runner", _TEXT_TO_IMAGE_RUNNERS + _EDIT_RUNNERS)
-@pytest.mark.parametrize("device", _DEVICES)
+@pytest.mark.parametrize(
+    "runner, device",
+    [(r, d) for r in _TEXT_TO_IMAGE_RUNNERS for d in _BH_DEVICES + _WH_DEVICES]
+    + [(r, d) for r in _EDIT_RUNNERS for d in _BH_DEVICES],
+)
 def test_device_configs(runner, device):
     config = ModelConfigs[(ModelRunners(runner), device)]
     expected = {
@@ -180,3 +183,9 @@ def test_device_configs(runner, device):
     }.get(device, (4, 8))
     assert config["device_mesh_shape"] == expected
     assert config["max_batch_size"] == 1
+
+
+@pytest.mark.parametrize("runner", _EDIT_RUNNERS)
+@pytest.mark.parametrize("device", _WH_DEVICES)
+def test_edit_runners_are_blackhole_only(runner, device):
+    assert (ModelRunners(runner), device) not in ModelConfigs
