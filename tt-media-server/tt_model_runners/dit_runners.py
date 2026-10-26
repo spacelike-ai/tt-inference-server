@@ -119,6 +119,9 @@ dit_runner_log_map = {
     ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V.value: "MiniMaxH3-Ref2VA-LightX2V",
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
+    ModelRunners.TT_QWEN_IMAGE_EDIT_2511.value: "Qwen-Image-Edit-2511",
+    ModelRunners.TT_FLUX_2_KLEIN_4B.value: "FLUX.2-klein-4B",
+    ModelRunners.TT_IDEOGRAM_4.value: "Ideogram-4",
     ModelRunners.SP_RUNNER.value: "SP-Runner",
 }
 
@@ -234,12 +237,20 @@ class TTDiTRunner(BaseMetalDeviceRunner):
                 )
             elif self.settings.model_service == ModelServices.VIDEO.value:
                 self.run([self._build_warmup_video_request()])
+            elif self.settings.model_service == ModelServices.GENERATION.value:
+                for request in self.warmup_requests():
+                    self.run([request])
         finally:
             self._warming_up = False
 
         self.logger.info(f"Device {self.device_id}: Model warmup completed")
 
         return True
+
+    def warmup_requests(self) -> list:
+        """A generations-API runner's warmup requests, one per output size it
+        serves that the pipeline does not warm up itself."""
+        raise NotImplementedError
 
     def _build_warmup_video_request(self) -> VideoGenerateRequest:
         """

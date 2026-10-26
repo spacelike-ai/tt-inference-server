@@ -17,6 +17,7 @@ from typing import Any, Callable, Dict, Optional
 from config.constants import (
     JobTypes,
     adapters_root,
+    generations_root,
     job_database_path,
     merged_models_root,
 )
@@ -734,6 +735,7 @@ class JobManager:
         result_roots = {
             JobTypes.TRAINING.value: adapters_root,
             JobTypes.ADAPTER_MERGE.value: merged_models_root,
+            JobTypes.GENERATION.value: generations_root,
         }
         root_factory = result_roots.get(job.job_type)
         if root_factory is not None:

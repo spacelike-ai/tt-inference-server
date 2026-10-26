@@ -17,9 +17,12 @@ class SupportedModels(Enum):
     FLUX_1_DEV = "black-forest-labs/FLUX.1-dev"
     FLUX_1_SCHNELL = "black-forest-labs/FLUX.1-schnell"
     FLUX_1_KONTEXT_DEV = "black-forest-labs/FLUX.1-Kontext-dev"
+    FLUX_2_KLEIN_4B = "black-forest-labs/FLUX.2-klein-4B"
     MOTIF_IMAGE_6B_PREVIEW = "Motif-Technologies/Motif-Image-6B-Preview"
     QWEN_IMAGE = "Qwen/Qwen-Image"
     QWEN_IMAGE_2512 = "Qwen/Qwen-Image-2512"
+    QWEN_IMAGE_EDIT_2511 = "Qwen/Qwen-Image-Edit-2511"
+    IDEOGRAM_4 = "ideogram-ai/ideogram-4-fp8"
     MOCHI_1 = "genmo/mochi-1-preview"
     WAN_2_2 = "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
     WAN_2_2_T2V_PRODIA = "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
@@ -74,9 +77,12 @@ class ModelNames(Enum):
     FLUX_1_DEV = "FLUX.1-dev"
     FLUX_1_SCHNELL = "FLUX.1-schnell"
     FLUX_1_KONTEXT_DEV = "FLUX.1-Kontext-dev"
+    FLUX_2_KLEIN_4B = "FLUX.2-klein-4B"
     MOTIF_IMAGE_6B_PREVIEW = "Motif-Image-6B-Preview"
     QWEN_IMAGE = "Qwen-Image"
     QWEN_IMAGE_2512 = "Qwen-Image-2512"
+    QWEN_IMAGE_EDIT_2511 = "Qwen-Image-Edit-2511"
+    IDEOGRAM_4 = "ideogram-4"
     MOCHI_1 = "mochi-1-preview"
     WAN_2_2 = "Wan2.2-T2V-A14B-Diffusers"
     WAN_2_2_T2V_PRODIA = "Wan2.2-T2V-A14B-Prodia"
@@ -136,6 +142,9 @@ class ModelRunners(Enum):
     TT_MOTIF_IMAGE_6B_PREVIEW = "tt-motif-image-6b-preview"
     TT_QWEN_IMAGE = "tt-qwen-image"
     TT_QWEN_IMAGE_2512 = "tt-qwen-image-2512"
+    TT_QWEN_IMAGE_EDIT_2511 = "tt-qwen-image-edit-2511"
+    TT_FLUX_2_KLEIN_4B = "tt-flux.2-klein-4b"
+    TT_IDEOGRAM_4 = "tt-ideogram-4"
     TT_MOCHI_1 = "tt-mochi-1"
     TT_WAN_2_2 = "tt-wan2.2"
     TT_WAN_2_2_T2V_PRODIA = "tt-wan2.2-t2v-prodia"
@@ -195,9 +204,16 @@ class ModelServices(Enum):
     TRAINING = "training"
     TEXT_TO_SPEECH = "text_to_speech"
     EMBEDDING = "embedding"
+    GENERATION = "generation"
 
 
 MODEL_SERVICE_RUNNER_MAP = {
+    ModelServices.GENERATION: {
+        ModelRunners.TT_WAN_2_2_I2V,
+        ModelRunners.TT_QWEN_IMAGE_EDIT_2511,
+        ModelRunners.TT_FLUX_2_KLEIN_4B,
+        ModelRunners.TT_IDEOGRAM_4,
+    },
     ModelServices.IMAGE: {
         ModelRunners.TT_SDXL_EDIT,
         ModelRunners.TT_SDXL_IMAGE_TO_IMAGE,
@@ -248,7 +264,6 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_MOCHI_1,
         ModelRunners.TT_WAN_2_2,
         ModelRunners.TT_WAN_2_2_T2V_PRODIA,
-        ModelRunners.TT_WAN_2_2_I2V,
         ModelRunners.TT_WAN_2_2_I2V_PRODIA,
         ModelRunners.TT_WAN_2_2_I2V_ANISORA,
         ModelRunners.TT_WAN_2_2_I2V_DISTILL,
@@ -278,7 +293,6 @@ MODEL_SERVICE_RUNNER_MAP = {
 # ``POST /generations`` before the work reaches the device worker.
 I2V_MODEL_RUNNERS = frozenset(
     {
-        ModelRunners.TT_WAN_2_2_I2V,
         ModelRunners.TT_WAN_2_2_I2V_PRODIA,
         ModelRunners.TT_WAN_2_2_I2V_ANISORA,
         ModelRunners.TT_WAN_2_2_I2V_DISTILL,
@@ -290,7 +304,6 @@ I2V_MODEL_RUNNERS = frozenset(
 # so the runner alone cannot identify it — fall back to the model name.
 I2V_MODEL_NAMES = frozenset(
     {
-        ModelNames.WAN_2_2_I2V,
         ModelNames.WAN_2_2_I2V_PRODIA,
         ModelNames.WAN_2_2_I2V_ANISORA,
         ModelNames.WAN_2_2_I2V_DISTILL,
@@ -396,6 +409,9 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW: {ModelNames.MOTIF_IMAGE_6B_PREVIEW},
     ModelRunners.TT_QWEN_IMAGE: {ModelNames.QWEN_IMAGE},
     ModelRunners.TT_QWEN_IMAGE_2512: {ModelNames.QWEN_IMAGE_2512},
+    ModelRunners.TT_QWEN_IMAGE_EDIT_2511: {ModelNames.QWEN_IMAGE_EDIT_2511},
+    ModelRunners.TT_FLUX_2_KLEIN_4B: {ModelNames.FLUX_2_KLEIN_4B},
+    ModelRunners.TT_IDEOGRAM_4: {ModelNames.IDEOGRAM_4},
     ModelRunners.TT_MOCHI_1: {ModelNames.MOCHI_1},
     ModelRunners.TT_WAN_2_2: {ModelNames.WAN_2_2},
     ModelRunners.TT_WAN_2_2_T2V_PRODIA: {ModelNames.WAN_2_2_T2V_PRODIA},
@@ -409,7 +425,6 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.SP_RUNNER: {
         ModelNames.WAN_2_2,
         ModelNames.WAN_2_2_T2V_PRODIA,
-        ModelNames.WAN_2_2_I2V,
         ModelNames.WAN_2_2_I2V_PRODIA,
         ModelNames.WAN_2_2_I2V_LIGHTNING,
         ModelNames.MOCHI_1,
@@ -647,6 +662,7 @@ TTS_RESPONSE_FORMATS = AUDIO_RESPONSE_FORMATS | frozenset(
 
 class JobTypes(Enum):
     VIDEO = "video"
+    GENERATION = "generation"
     TRAINING = "training"
     ADAPTER_MERGE = "adapter_merge"
 
@@ -701,6 +717,11 @@ def merged_models_root() -> str:
 
 def job_database_path() -> str:
     return os.path.join(_training_store_root(), TRAINING_STORE_JOB_DATABASE_FILENAME)
+
+
+# One directory per generation job, holding its output files and their manifest.
+def generations_root() -> str:
+    return os.getenv("TT_GENERATIONS_DIR", "/tmp/generations")
 
 
 # Helper function to create vLLM configuration with late import to avoid circular imports
@@ -1087,6 +1108,51 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         "max_batch_size": 1,
     },
+    # Qwen-Image-Edit-2511 is Blackhole only: on WH 2x4 a second edit call runs
+    # out of DRAM.
+    (ModelRunners.TT_QWEN_IMAGE_EDIT_2511, DeviceTypes.P300X2): {
+        "device_mesh_shape": (2, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN_IMAGE_EDIT_2511, DeviceTypes.P150X8): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_8_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN_IMAGE_EDIT_2511, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_FLUX_2_KLEIN_4B, DeviceTypes.T3K): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_FLUX_2_KLEIN_4B, DeviceTypes.P150X8): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_8_GROUP.value,
+        "max_batch_size": 1,
+    },
+    # The meshes Ideogram4Pipeline has parallelism presets for.
+    (ModelRunners.TT_IDEOGRAM_4, DeviceTypes.P150X8): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_8_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_IDEOGRAM_4, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+    },
     (ModelRunners.TT_MOCHI_1, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
@@ -1387,13 +1453,6 @@ ModelConfigs = {
         "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.TT_WAN_2_2_T2V_PRODIA, DeviceTypes.GALAXY_QUAD): {
-        "device_mesh_shape": (4, 32),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
-        "max_batch_size": 1,
-        "request_processing_timeout_seconds": 5000,
-    },
-    (ModelRunners.TT_WAN_2_2_I2V, DeviceTypes.GALAXY_QUAD): {
         "device_mesh_shape": (4, 32),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,

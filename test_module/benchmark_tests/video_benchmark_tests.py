@@ -25,12 +25,13 @@ from .._test_common import (
     MetricSpec,
     ReportCheckTypes,
     SkipTest,
-    VIDEO_GENERATION_ENDPOINT,
     VIDEO_GENERATION_I2V_SUBMIT_ENDPOINT,
     _load_fixture_image_base64,
     block_id,
     build_video_generation_payload,
+    get_video_download_url,
     get_video_generation_submit_endpoint,
+    get_video_job_endpoint,
     is_i2v_video_model,
     run_tiered_check,
 )
@@ -99,7 +100,9 @@ def _download_video(ctx: MediaContext, job_id: str, headers: dict) -> str:
         video_path = output_dir / f"{job_id}.mp4"
 
         response = requests.get(
-            f"{ctx.base_url}/{VIDEO_GENERATION_ENDPOINT}/{job_id}/download",
+            get_video_download_url(
+                ctx.base_url, ctx.model_spec.model_name, job_id, headers
+            ),
             headers=headers,
             timeout=300,
             stream=True,
@@ -134,7 +137,8 @@ def _poll_video_completion(
     while time.time() - start_time < timeout:
         try:
             response = requests.get(
-                f"{ctx.base_url}/{VIDEO_GENERATION_ENDPOINT}/{job_id}",
+                f"{ctx.base_url}/"
+                f"{get_video_job_endpoint(ctx.model_spec.model_name, job_id)}",
                 headers=headers,
                 timeout=30,
             )
@@ -194,6 +198,7 @@ def _generate_video(
             num_inference_steps=num_inference_steps,
             model_name=model_name,
             image_b64=image_b64,
+            device=ctx.device,
         )
     # Avoid logging the (large) base64 image prompt for I2V.
     logger.info(f"Payload keys: {sorted(payload)} -> endpoint: {submit_endpoint}")

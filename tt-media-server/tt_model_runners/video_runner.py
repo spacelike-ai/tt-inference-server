@@ -171,7 +171,6 @@ def _create_dit_runner(model_runner: str, rank: int):
         TTWan22I2VLightningRunner,
         TTWan22I2VLoRARunner,
         TTWan22I2VProdiaRunner,
-        TTWan22I2VRunner,
         TTWan22Runner,
         TTWan22T2VProdiaRunner,
     )
@@ -180,7 +179,6 @@ def _create_dit_runner(model_runner: str, rank: int):
         ModelRunners.TT_MOCHI_1.value: TTMochi1Runner,
         ModelRunners.TT_WAN_2_2.value: TTWan22Runner,
         ModelRunners.TT_WAN_2_2_T2V_PRODIA.value: TTWan22T2VProdiaRunner,
-        ModelRunners.TT_WAN_2_2_I2V.value: TTWan22I2VRunner,
         ModelRunners.TT_WAN_2_2_I2V_PRODIA.value: TTWan22I2VProdiaRunner,
         ModelRunners.TT_WAN_2_2_I2V_ANISORA.value: TTWan22I2VAniSoraRunner,
         ModelRunners.TT_WAN_2_2_I2V_DISTILL.value: TTWan22I2VDistillRunner,

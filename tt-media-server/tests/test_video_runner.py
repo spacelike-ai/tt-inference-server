@@ -170,19 +170,12 @@ class TestCreateDitRunner:
             _create_dit_runner("tt-wan2.2", 1)
             mock_wan.assert_called_once_with("")
 
-    def test_creates_wan_i2v_runner(self):
-        """``tt-wan2.2-i2v`` must resolve to ``TTWan22I2VRunner`` so the
-        multi-host MPI entrypoint can serve I2V requests at all."""
-        mock_mochi = Mock()
-        mock_wan = Mock()
-        mock_wan_i2v = Mock()
-        with patch.dict(
-            sys.modules, self._make_dit_module(mock_mochi, mock_wan, mock_wan_i2v)
-        ):
-            _create_dit_runner("tt-wan2.2-i2v", 0)
-            mock_wan_i2v.assert_called_once_with("")
-            mock_wan.assert_not_called()
-            mock_mochi.assert_not_called()
+    def test_rejects_wan_i2v_a14b_runner(self):
+        """``tt-wan2.2-i2v`` is served by the generations API, which the
+        multi-host MPI entrypoint does not speak."""
+        with patch.dict(sys.modules, self._make_dit_module(Mock(), Mock())):
+            with pytest.raises(ValueError, match="Unsupported MODEL_RUNNER"):
+                _create_dit_runner("tt-wan2.2-i2v", 0)
 
     def test_creates_wan_i2v_prodia_runner(self):
         """``tt-wan2.2-i2v-prodia`` must resolve to ``TTWan22I2VProdiaRunner``

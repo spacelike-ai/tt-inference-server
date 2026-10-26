@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from test_module._test_common import SkipTest
+from test_module._test_common import video_generation_routing as routing
 from test_module.benchmark_tests import video_benchmark_tests as mod
 
 
@@ -35,9 +36,7 @@ def test_i2v_model_has_inference_step_profile():
     assert "Wan-AI/Wan2.2-I2V-A14B-Diffusers" in mod.VIDEO_INFERENCE_STEPS
 
 
-def test_i2v_generation_routes_to_i2v_endpoint_and_payload(monkeypatch):
-    # An I2V benchmark call must hit the I2V submit endpoint with an image prompt,
-    # matching the eval flow and the main-branch behaviour.
+def _capture_submit(monkeypatch, job_id: str) -> dict:
     captured = {}
 
     class _Resp:
@@ -45,7 +44,7 @@ def test_i2v_generation_routes_to_i2v_endpoint_and_payload(monkeypatch):
 
         @staticmethod
         def json():
-            return {"id": "job-123"}
+            return {"id": job_id}
 
     def _fake_post(url, json, headers, timeout):
         captured["url"] = url
@@ -54,10 +53,21 @@ def test_i2v_generation_routes_to_i2v_endpoint_and_payload(monkeypatch):
 
     monkeypatch.setattr(mod.requests, "post", _fake_post)
     monkeypatch.setattr(mod, "_poll_video_completion", lambda *a, **k: "/tmp/out.mp4")
+    return captured
 
+
+@pytest.mark.parametrize(
+    ("device", "size"),
+    [("T3K", "480p"), ("GALAXY", "480p"), ("BLACKHOLE_GALAXY", "720p")],
+)
+def test_wan_i2v_a14b_routes_to_the_generations_api(monkeypatch, device, size):
+    # Wan2.2-I2V-A14B is served by the generations API: its own submit path,
+    # the image as a data URI, and a size the device's tt_dit preset serves.
+    captured = _capture_submit(monkeypatch, "job-123")
     ctx = SimpleNamespace(
         model_spec=SimpleNamespace(model_name="Wan2.2-I2V-A14B-Diffusers"),
         base_url="http://localhost:8000",
+        device=SimpleNamespace(name=device),
     )
     ok, _elapsed, job_id, video_path = mod._generate_video(
         ctx,
@@ -69,9 +79,69 @@ def test_i2v_generation_routes_to_i2v_endpoint_and_payload(monkeypatch):
     assert ok is True
     assert job_id == "job-123"
     assert video_path == "/tmp/out.mp4"
+    assert captured["url"].endswith("v1/generations/wan-ai/wan2.2-i2v-a14b")
+    assert captured["payload"] == {
+        "prompt": "a volcano erupting",
+        "negative_prompt": "blurry, low quality, distorted",
+        "seed": 42,
+        "first_frame": "data:image/jpeg;base64,ZmFrZQ==",
+        "size": size,
+        "aspect_ratio": "16:9",
+    }
+
+
+def test_other_i2v_variants_keep_the_video_api(monkeypatch):
+    captured = _capture_submit(monkeypatch, "job-456")
+    ctx = SimpleNamespace(
+        model_spec=SimpleNamespace(model_name="Wan2.2-I2V-Lightning"),
+        base_url="http://localhost:8000",
+        device=SimpleNamespace(name="GALAXY"),
+    )
+    mod._generate_video(ctx, prompt="x", num_inference_steps=4, image_b64="ZmFrZQ==")
     assert captured["url"].endswith("v1/videos/generations/i2v")
     assert captured["payload"]["image_prompts"][0]["image"] == "ZmFrZQ=="
-    assert captured["payload"]["num_inference_steps"] == 40
+    assert captured["payload"]["num_inference_steps"] == 4
+
+
+@pytest.mark.parametrize(
+    ("model_name", "status", "download"),
+    [
+        (
+            "Wan2.2-I2V-A14B-Diffusers",
+            "v1/jobs/job-1",
+            "http://h/v1/jobs/job-1/content/0",
+        ),
+        (
+            "Wan2.2-I2V-Lightning",
+            "v1/videos/generations/job-1",
+            "http://h/v1/videos/generations/job-1/download",
+        ),
+    ],
+)
+def test_job_status_and_download_urls(monkeypatch, model_name, status, download):
+    # The generations API's video is behind the completed job's output url.
+    requested = []
+
+    class _Result:
+        @staticmethod
+        def raise_for_status():
+            pass
+
+        @staticmethod
+        def json():
+            return {"outputs": [{"url": "/v1/jobs/job-1/content/0"}]}
+
+    def _fake_get(url, headers, timeout):
+        requested.append(url)
+        return _Result()
+
+    monkeypatch.setattr(routing.requests, "get", _fake_get)
+    assert routing.get_video_job_endpoint(model_name, "job-1") == status
+    assert (
+        routing.get_video_download_url("http://h", model_name, "job-1", {}) == download
+    )
+    if model_name.startswith("Wan2.2-I2V-A14B"):
+        assert requested == ["http://h/v1/jobs/job-1"]
 
 
 def test_t2v_generation_routes_to_base_endpoint(monkeypatch):
@@ -95,6 +165,7 @@ def test_t2v_generation_routes_to_base_endpoint(monkeypatch):
     ctx = SimpleNamespace(
         model_spec=SimpleNamespace(model_name="Wan2.2-T2V-A14B-Diffusers"),
         base_url="http://localhost:8000",
+        device=SimpleNamespace(name="T3K"),
     )
     mod._generate_video(ctx, prompt="a sunset", num_inference_steps=40)
 
