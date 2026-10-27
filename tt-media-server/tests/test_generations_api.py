@@ -23,11 +23,13 @@ import yaml
 from config.constants import JobTypes
 from domain.flux2_klein_4b_request import Flux2klein4bRequest
 from domain.ideogram4_request import Ideogram4Request
+from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.qwen_image_edit_2511_request import QwenImageEdit2511Request
 from domain.wan22_i2v_a14b_request import WAN_NEGATIVE_PROMPT, Wan22i2vA14bRequest
 from fastapi import FastAPI
 from PIL import Image
 from pydantic import ValidationError
+from utils.video_manager import VideoAudioResult, VideoManager
 
 _SPEC_DIR = pathlib.Path(__file__).resolve().parents[1] / "docs" / "api" / "generation"
 
@@ -74,6 +76,7 @@ def _resolved(schema: dict, defs: dict) -> dict:
         QwenImageEdit2511Request,
         Flux2klein4bRequest,
         Ideogram4Request,
+        Ltx23DistilledRequest,
     ],
 )
 def test_request_schema_matches_the_spec(request_model):
@@ -144,6 +147,32 @@ def test_wan_fields():
                 **{"aspect_ratio": "16:9", "size": "480p", **fields},
             )
     assert len(set(Wan22i2vA14bRequest.warmup_sizes())) == 4
+
+
+@pytest.mark.parametrize("fields", [{}, {"duration": 6}, {"duration": 6.12}])
+def test_ltx_serves_one_shape(fields):
+    request = Ltx23DistilledRequest(prompt="a violinist", **fields)
+    assert (request.frames, request.fps, request.output_size()) == (
+        153,
+        25,
+        (1920, 1088),
+    )
+
+
+@pytest.mark.parametrize(
+    ("fields", "message"),
+    [
+        ({"duration": 5.8}, "145 frames"),
+        ({"duration": float("inf")}, "finite number"),
+        ({"frames": 150}, "greater than or equal to 153"),
+        ({"fps": 24}, "greater than or equal to 25"),
+        ({"height": 720}, "greater than or equal to 1088"),
+        ({"num_inference_steps": 11}, "extra"),
+    ],
+)
+def test_ltx_rejects(fields, message):
+    with pytest.raises(ValidationError, match=message):
+        Ltx23DistilledRequest(prompt="a violinist", **fields)
 
 
 def test_qwen_size_follows_last_image():
@@ -321,12 +350,14 @@ def test_other_services_jobs_are_404(monkeypatch, job_type):
 
 class _FakeDevice:
     """Stands in for the scheduler and device: each request yields an image,
-    or a video for Wan, after ``delay`` seconds."""
+    or a video for Wan, after ``delay`` seconds. ``video``, if set, makes a
+    video's result instead."""
 
     def __init__(self, delay: float = 0.0):
         self.delay = delay
         self.requests = []
         self.error = None
+        self.video = None
 
     def check_is_model_ready(self):
         return True
@@ -338,6 +369,8 @@ class _FakeDevice:
         await asyncio.sleep(self.delay)
         if self.error is not None:
             raise self.error
+        if request.OUTPUT_TYPE == "video" and self.video is not None:
+            return self.video(request)
         if request.OUTPUT_TYPE == "video":
             return np.zeros(
                 (request.frames, request._height, request._width, 3), np.uint8
@@ -474,8 +507,51 @@ async def test_video_job(generations_app):
     assert output["type"] == "video" and output["content_type"] == "video/mp4"
     assert (output["width"], output["height"], output["fps"]) == (480, 832, 16)
     assert output["num_frames"] == 81 and output["duration"] == 81 / 16
+    assert output["audio"] is False
     content = await client.get(output["url"])
     assert content.headers["content-type"] == "video/mp4" and content.content
+
+
+def _sound_video(frames: int = 9) -> VideoAudioResult:
+    return VideoAudioResult(
+        frames=np.zeros((frames, 64, 64, 3), np.uint8),
+        audio=np.zeros((2, 16000 * frames // 25), np.float32),
+        sampling_rate=16000,
+        fps=25,
+    )
+
+
+@pytest.mark.parametrize("encoded_by_the_pipeline", [False, True])
+async def test_video_with_sound_job(generations_app, encoded_by_the_pipeline):
+    import av
+
+    client, device = generations_app("tt-ltx-2.3-distilled")
+    if encoded_by_the_pipeline:
+        # As LTX's generate() does: an MP4 with sound, not faststart.
+        def video(request):
+            result = _sound_video()
+            return VideoManager().export_to_mp4_with_audio(
+                result.frames, result.audio, result.sampling_rate, fps=result.fps
+            )
+
+        device.video = video
+    else:
+        device.video = lambda request: _sound_video()
+    response = await client.post(
+        "/v1/generations/lightricks/ltx-2.3-distilled",
+        json={"prompt": "a violinist", "duration": 6},
+    )
+    assert response.status_code == 202, response.text
+    job = await _wait_final(client, response.json()["id"])
+    assert job["status"] == "completed", job
+    (output,) = job["outputs"]
+    assert output["audio"] is True and output["fps"] == 25
+    assert output["num_frames"] == 9
+    content = await client.get(output["url"])
+    with av.open(BytesIO(content.content)) as container:
+        assert container.streams.video and container.streams.audio
+    # faststart: the index comes before the media data.
+    assert content.content.index(b"moov") < content.content.index(b"mdat")
 
 
 async def test_invalid_media_is_422_before_queueing(generations_app):
@@ -599,6 +675,41 @@ async def test_failed_job_reports_error(generations_app, tmp_path):
     assert list(tmp_path.iterdir()) == []
 
 
+async def test_a_generations_dir_in_any_spelling_works(
+    generations_app, monkeypatch, tmp_path
+):
+    monkeypatch.setenv("TT_GENERATIONS_DIR", f"{tmp_path}//./")
+    client, _ = generations_app("tt-flux.2-klein-4b")
+    response = await client.post(
+        "/v1/generations/black-forest-labs/flux.2-klein-4b", json={"prompt": "a cat"}
+    )
+    job = await _wait_final(client, response.json()["id"])
+    assert job["status"] == "completed", job
+    assert (tmp_path / job["id"] / "outputs.json").exists()
+
+
+async def test_what_a_runner_leaves_in_a_failed_jobs_directory_goes_with_it(
+    generations_app, tmp_path
+):
+    # As LTX's runner writes its video into the job's directory, here before
+    # the job fails.
+    client, device = generations_app("tt-ltx-2.3-distilled")
+
+    def video(request):
+        (tmp_path / request._task_id).mkdir()
+        (tmp_path / request._task_id / "ltx.mp4").write_bytes(b"mp4")
+        raise RuntimeError("device fell over")
+
+    device.video = video
+    response = await client.post(
+        "/v1/generations/lightricks/ltx-2.3-distilled", json={"prompt": "a violinist"}
+    )
+    job = await _wait_final(client, response.json()["id"])
+    assert job["status"] == "failed"
+    assert (await client.delete(f"/v1/jobs/{job['id']}")).status_code == 200
+    assert list(tmp_path.iterdir()) == []
+
+
 @pytest.mark.parametrize(("size", "status"), [(12, 422), (20, 422), (9, 202)])
 async def test_oversized_images_are_422(generations_app, monkeypatch, size, status):
     # Over the limit (12x12) and over twice it, where PIL itself refuses (20x20).
@@ -645,6 +756,22 @@ async def test_an_earlier_output_is_an_input_by_its_url(generations_app):
     )
     assert missing.status_code == 422
     assert missing.json()["detail"][0]["loc"] == ["body", "images", 0]
+
+
+async def test_an_unfinished_jobs_output_is_not_an_input(generations_app):
+    client, _ = generations_app("tt-qwen-image-edit-2511", delay=0.5)
+    running = (
+        await client.post(
+            "/v1/generations/qwen/qwen-image-edit-2511",
+            json={"prompt": "a hat", "images": [_data_uri(1600, 900)]},
+        )
+    ).json()
+    response = await client.post(
+        "/v1/generations/qwen/qwen-image-edit-2511",
+        json={"prompt": "a scarf", "images": [f"/v1/jobs/{running['id']}/content/0"]},
+    )
+    assert response.status_code == 422
+    assert "has no completed result" in response.json()["detail"][0]["msg"]
 
 
 def test_stored_request_digests_data_uris():

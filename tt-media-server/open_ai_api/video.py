@@ -125,8 +125,7 @@ async def _read_capped_upload(upload: UploadFile) -> bytes:
     return b"".join(chunks)
 
 
-# "basic" omits steps and shape fields so it is valid on every model
-# (LTX rejects a step count).
+# "basic" omits steps and shape fields so it is valid on every model.
 _T2V_EXAMPLES = {
     "basic": {
         "summary": "Text-to-video (server defaults)",

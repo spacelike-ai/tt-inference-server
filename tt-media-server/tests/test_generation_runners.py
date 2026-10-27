@@ -7,6 +7,7 @@ warmup requests they build. The pipelines are stubs; the runner module is
 loaded against fake tt-metal modules, as in test_video_stage_metrics_wiring."""
 
 import importlib.util
+import pathlib
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -15,6 +16,7 @@ from unittest.mock import Mock
 import pytest
 from domain.flux2_klein_4b_request import Flux2klein4bRequest
 from domain.ideogram4_request import Ideogram4Request
+from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.qwen_image_edit_2511_request import QwenImageEdit2511Request
 from domain.wan22_i2v_a14b_request import (
     WAN_NEGATIVE_PROMPT,
@@ -114,6 +116,11 @@ class _Pipeline:
     def __call__(self, **kwargs):
         self.calls.append(kwargs)
         return ["output"]
+
+    def generate(self, prompt, **kwargs):
+        self.calls.append({"prompt": prompt, **kwargs})
+        pathlib.Path(kwargs["output_path"]).write_bytes(b"mp4")
+        return kwargs["output_path"]
 
 
 def _runner(class_name: str, warming_up: bool = False):
@@ -264,6 +271,34 @@ def test_wan_warmup_conditions_the_last_frame(monkeypatch):
         (call,) = runner.pipeline.calls
         frame_positions.add(tuple(pos for _, pos in call["image_prompt"]))
     assert frame_positions == {(0,), (0, 80)}
+
+
+@pytest.mark.parametrize("warming_up", [False, True])
+def test_ltx_writes_the_served_shape(monkeypatch, tmp_path, warming_up):
+    monkeypatch.setenv("TT_GENERATIONS_DIR", str(tmp_path))
+    runner = _runner("TTLtx23DistilledRunner", warming_up=warming_up)
+    if warming_up:
+        (request,) = runner.warmup_requests()
+    else:
+        request = _resolved(
+            Ltx23DistilledRequest(prompt="a violinist"), 1920, 1088, seed=5
+        )
+    (path,) = runner.run([request])
+    (call,) = runner.pipeline.calls
+    assert call == {
+        "prompt": request._prompt,
+        "output_path": path,
+        "num_frames": 153,
+        "height": 1088,
+        "width": 1920,
+        "seed": request._seed,
+        "fps": 25,
+    }
+    # Into the job's directory; warmup only captures the traces, and its
+    # video is not kept.
+    assert pathlib.Path(path).parent == tmp_path / request._task_id
+    assert pathlib.Path(path).exists() is not warming_up
+    assert pathlib.Path(path).parent.exists() is not warming_up
 
 
 def test_qwen_pipeline_warms_itself_up():

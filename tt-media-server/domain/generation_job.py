@@ -49,6 +49,12 @@ class VideoOutput(_OutputBase):
     fps: int
     num_frames: int
     duration: float = Field(description="Seconds.")
+    audio: bool = Field(
+        description=(
+            "Whether the video has a soundtrack, generated with it by the model. "
+            "Fixed per model."
+        )
+    )
 
 
 Output = Annotated[Union[ImageOutput, VideoOutput], Field(discriminator="type")]

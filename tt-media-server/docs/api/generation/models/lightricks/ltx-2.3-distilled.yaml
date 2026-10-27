@@ -1,0 +1,118 @@
+openapi: 3.1.0
+info:
+  title: LTX-2.3 distilled generation API (tt-media-server)
+  version: 0.1.0
+  description: |
+    What a `lightricks/ltx-2.3-distilled` deployment serves: its submit endpoint and
+    the common `/v1/jobs` API. Shared schemas, responses and auth live
+    in `common.yaml`, which also describes the API as a whole.
+security:
+  - Bearer: []
+paths:
+  /v1/generations/lightricks/ltx-2.3-distilled:
+    post:
+      operationId: submitLtx23Distilled
+      tags: [LTX-2.3 distilled]
+      summary: Submit an LTX-2.3 distilled text-to-video job
+      description: |
+        Text to video with a soundtrack generated with it. The pipeline is
+        built and traced for one shape: 1920×1088, 153 frames at 25 fps
+        (6.12 s), so the shape fields each allow only that value. The
+        distilled schedule fixes the step count (8 + 3), so there is none to
+        set.
+
+        **Elsewhere:** tt-media-server today `POST /v1/videos/generations`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Ltx23DistilledRequest"
+            example:
+              prompt: a street musician plays violin on a rainy evening
+              seed: 1234
+      responses:
+        "202":
+          $ref: "../../common.yaml#/components/responses/Submitted"
+        "401":
+          $ref: "../../common.yaml#/components/responses/Unauthorized"
+        "404":
+          $ref: "../../common.yaml#/components/responses/NotServed"
+        "422":
+          $ref: "../../common.yaml#/components/responses/Invalid"
+        "429":
+          $ref: "../../common.yaml#/components/responses/QueueFull"
+        "503":
+          $ref: "../../common.yaml#/components/responses/Unavailable"
+  /v1/jobs:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs
+  /v1/jobs/{job_id}:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D
+  /v1/jobs/{job_id}/content/{index}:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D~1content~1%7Bindex%7D
+  /v1/jobs/{job_id}/cancel:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D~1cancel
+components:
+  schemas:
+    Ltx23DistilledRequest:
+      type: object
+      additionalProperties: false
+      required: [prompt]
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+          description: |
+            Describes the picture and the sound.
+
+            **Elsewhere:** tt-media-server today `prompt`.
+        width:
+          type: integer
+          minimum: 1920
+          maximum: 1920
+          default: 1920
+          description: |
+            Only 1920.
+
+            **Elsewhere:** tt-media-server today `width`.
+        height:
+          type: integer
+          minimum: 1088
+          maximum: 1088
+          default: 1088
+          description: |
+            Only 1088: LTX needs sides that are multiples of 64.
+
+            **Elsewhere:** tt-media-server today `height`.
+        frames:
+          type: integer
+          minimum: 153
+          maximum: 153
+          default: 153
+          description: |
+            Only 153. LTX needs a frame count of the form 8k + 1; 153 is the
+            nearest to 6 s at 25 fps.
+
+            **Elsewhere:** tt-media-server today `num_frames`.
+        duration:
+          type: number
+          exclusiveMinimum: 0
+          description: |
+            Seconds, an alternative to `frames`: converted at `fps` and snapped
+            to the nearest frame count of the form 8k + 1, which must be 153.
+            Given with `frames`, the two must agree. The output reports the
+            exact `duration`.
+
+            **Elsewhere:** tt-media-server today `duration`.
+        fps:
+          type: integer
+          minimum: 25
+          maximum: 25
+          default: 25
+          description: |
+            Only 25: the rate sets the audio length and the audio-video
+            positions, which are baked into the traces.
+
+            **Elsewhere:** tt-media-server today `fps`.
+        seed:
+          $ref: "../../common.yaml#/components/schemas/Seed"

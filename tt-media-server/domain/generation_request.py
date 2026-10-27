@@ -86,6 +86,8 @@ class GenerationRequest(BaseRequest):
     # Hugging Face ID.
     MODEL_ID: ClassVar[str]
     OUTPUT_TYPE: ClassVar[Literal["image", "video"]]
+    # Whether the video has a soundtrack.
+    AUDIO: ClassVar[bool] = False
     # Fields holding Media, alone or in a list.
     MEDIA_FIELDS: ClassVar[tuple[str, ...]] = ()
 

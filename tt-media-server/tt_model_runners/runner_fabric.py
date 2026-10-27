@@ -77,8 +77,8 @@ AVAILABLE_RUNNERS = {
         "tt_model_runners.dit_runners", fromlist=["TTWan22I2VLightningRunner"]
     ).TTWan22I2VLightningRunner(wid),
     ModelRunners.TT_LTX_2_3_DISTILLED: lambda wid: __import__(
-        "tt_model_runners.dit_runners", fromlist=["TTLTX23DistilledRunner"]
-    ).TTLTX23DistilledRunner(wid),
+        "tt_model_runners.generation_runners", fromlist=["TTLtx23DistilledRunner"]
+    ).TTLtx23DistilledRunner(wid),
     ModelRunners.TT_MINIMAX_H3_T2VA: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTMiniMaxH3Runner"]
     ).TTMiniMaxH3Runner(wid),

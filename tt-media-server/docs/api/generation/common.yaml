@@ -114,7 +114,8 @@ paths:
       summary: Download one output file
       description: |
         The file behind `outputs[index].url`. Videos are MP4: H.264 (High
-        profile, yuv420p), no audio track, faststart.
+        profile, yuv420p), faststart, with an AAC audio track if the output's
+        `audio` is true.
 
         **Elsewhere:** tt-media-server today `GET
         /v1/videos/generations/{job_id}/download` (one file only).
@@ -477,14 +478,20 @@ components:
               type: integer
     VideoOutput:
       description: |
-        An MP4 file: H.264 (High profile, yuv420p), no audio track, faststart.
+        An MP4 file: H.264 (High profile, yuv420p), faststart, with an AAC
+        audio track if `audio` is true.
       allOf:
         - $ref: "#/components/schemas/OutputBase"
         - type: object
-          required: [width, height, fps, num_frames, duration]
+          required: [width, height, fps, num_frames, duration, audio]
           properties:
             type:
               const: video
+            audio:
+              type: boolean
+              description: |
+                Whether the video has a soundtrack, generated with it by the
+                model. Fixed per model.
             width:
               type: integer
             height:

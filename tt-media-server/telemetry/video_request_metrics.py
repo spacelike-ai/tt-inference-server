@@ -136,8 +136,8 @@ def observe_video_request(request: object, model_type: str, request_type: str) -
             *labels, bucket_aspect_ratio(getattr(request, "aspect_ratio", None))
         ).inc()
 
-        # H3 only: LTX writes its served duration back onto every request, so
-        # recording it there would count a value no client asked for.
+        # H3 only: the other models on this API ignore `duration`, so recording
+        # it there would count a value that changed nothing.
         from domain.video_generate_request import _is_minimax_h3
 
         duration = getattr(request, "duration", None) if _is_minimax_h3() else None

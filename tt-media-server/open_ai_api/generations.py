@@ -137,7 +137,8 @@ def get_job_content(
     service: GenerationService = Depends(service_resolver),
 ) -> FileResponse:
     """The file behind `outputs[index].url`. Videos are MP4: H.264 (High
-    profile, yuv420p), no audio track, faststart."""
+    profile, yuv420p), faststart, with an AAC audio track if the output's
+    `audio` is true."""
     metadata = _job_or_404(service, job_id)
     result_path = service.get_job_result_path(job_id)
     if metadata["status"] != "completed" or result_path is None:

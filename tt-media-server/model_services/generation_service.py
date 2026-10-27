@@ -15,7 +15,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from config.constants import JobTypes, generations_root
+from config.constants import JobTypes, generation_job_dir
 from config.settings import settings
 from domain.generation_request import MAX_SEED, OUTPUT_URL, GenerationRequest
 from fastapi import HTTPException
@@ -28,7 +28,7 @@ from utils.media_downloader import (
     MediaDownloadTooLargeError,
     download_media_url,
 )
-from utils.video_manager import VideoManager, probe_video
+from utils.video_manager import VideoAudioResult, VideoManager, probe_video
 
 # The file in a job's directory listing its outputs.
 MANIFEST = "outputs.json"
@@ -88,6 +88,32 @@ def _digest_data_uri(value: str) -> str:
     return "sha256:" + hashlib.sha256(value.encode()).hexdigest()
 
 
+def _write_video(result: Any, fps: int, path: Path) -> None:
+    """Write a runner's video to ``path`` as a faststart MP4.
+
+    The result is frames, frames with a soundtrack, or the path of an MP4 the
+    pipeline wrote itself, which is remuxed for faststart.
+    """
+    if isinstance(result, VideoAudioResult):
+        encoded = VideoManager().export_to_mp4_with_audio(
+            result.frames,
+            result.audio,
+            result.sampling_rate,
+            fps=result.fps,
+            pixel_format=result.pixel_format,
+        )
+    elif isinstance(result, str):
+        try:
+            VideoManager.ensure_faststart(result, str(path))
+        finally:
+            Path(result).unlink(missing_ok=True)
+        return
+    else:
+        # The encoder already writes faststart MP4s.
+        encoded = VideoManager().export_to_mp4(result, fps=fps)
+    shutil.move(encoded, path)
+
+
 def read_manifest(result_path: str) -> list[dict]:
     """The outputs of a completed job, from the directory it wrote them to."""
     return json.loads((Path(result_path) / MANIFEST).read_text())
@@ -134,6 +160,7 @@ class GenerationService(BaseJobService):
             cancel_event=request._cancel_event,
             worker_assignment=request._worker_assignment,
             request_parameters=_request_parameters(request),
+            result_path=generation_job_dir(request._task_id),
         )
 
     async def _load_images(self, request: GenerationRequest) -> None:
@@ -180,8 +207,16 @@ class GenerationService(BaseJobService):
 
     def _read_output(self, job_id: str, index: str) -> bytes:
         """The file of an earlier job's output, by the parts of its `url`."""
+        # A job's result path is set from submit on, so it says nothing about
+        # whether the job finished.
+        metadata = self.get_job_metadata(job_id)
         result_path = self.get_job_result_path(job_id)
-        if result_path is None:
+        if (
+            metadata is None
+            or metadata["job_type"] != JobTypes.GENERATION.value
+            or metadata["status"] != "completed"
+            or result_path is None
+        ):
             raise ValueError(f"job {job_id} has no completed result")
         try:
             outputs = read_manifest(result_path)
@@ -217,8 +252,10 @@ class GenerationService(BaseJobService):
             raise
 
     def _write_outputs(self, request: GenerationRequest, results: list[Any]) -> str:
-        directory = Path(generations_root()) / request._task_id
-        directory.mkdir(parents=True)
+        # A runner may already have written into it.
+        result_path = generation_job_dir(request._task_id)
+        directory = Path(result_path)
+        directory.mkdir(parents=True, exist_ok=True)
         try:
             outputs = [
                 self._write_output(directory, index, request, result)
@@ -228,7 +265,8 @@ class GenerationService(BaseJobService):
         except BaseException:
             shutil.rmtree(directory, ignore_errors=True)
             raise
-        return str(directory)
+        # Exactly the result path the job was created with.
+        return result_path
 
     @staticmethod
     def _write_output(
@@ -253,8 +291,7 @@ class GenerationService(BaseJobService):
             }
 
         path = directory / f"{index}.mp4"
-        # The encoder already writes faststart MP4s.
-        shutil.move(VideoManager().export_to_mp4(result, fps=request.fps), path)
+        _write_video(result, request.fps, path)
         probe = probe_video(str(path))
         num_frames = probe.num_frames or request.frames
         return {
@@ -266,4 +303,5 @@ class GenerationService(BaseJobService):
             "fps": request.fps,
             "num_frames": num_frames,
             "duration": num_frames / request.fps,
+            "audio": request.AUDIO,
         }

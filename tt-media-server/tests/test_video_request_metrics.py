@@ -131,9 +131,9 @@ def test_observe_records_shape():
 
 
 def test_observe_skips_duration_off_h3(monkeypatch):
-    """LTX writes its served duration onto every request; that is not a request."""
+    """The other models ignore `duration`; it changed nothing."""
     monkeypatch.setattr("domain.video_generate_request._is_minimax_h3", lambda: False)
-    model = "test-video-shape-ltx"
+    model = "test-video-shape-wan"
     observe_video_request(FakeRequest("16:9", 6.12), model, "t2v")
 
     labels = {"model_type": model, "request_type": "t2v"}

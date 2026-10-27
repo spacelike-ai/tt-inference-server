@@ -10,13 +10,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from config.constants import (
     DEFAULT_VIDEO_INFERENCE_STEPS,
-    LTX_NUM_INFERENCE_STEPS,
     LTX_TEMPORAL_COMPRESSION,
     MAX_VIDEO_INFERENCE_STEPS,
     MIN_VIDEO_INFERENCE_STEPS,
     JobTypes,
     ModelRunners,
-    ltx_served_shape,
     snap_num_frames,
 )
 from domain.video_generate_request import _H3_UNREAD_FIELDS, VideoGenerateRequest
@@ -913,19 +911,7 @@ class TestVideoGenerateRequestValidation:
             VideoGenerateRequest(prompt=prompt)
 
 
-class TestLTXShapeValidation:
-    """VideoGenerateRequest shape validation against the served LTX config."""
-
-    @staticmethod
-    def _ltx():
-        """Patch settings so the validator takes its LTX branch."""
-        return patch(
-            "domain.video_generate_request.get_settings",
-            return_value=MagicMock(
-                model_runner=ModelRunners.TT_LTX_2_3_DISTILLED.value
-            ),
-        )
-
+class TestVideoRequestShape:
     @staticmethod
     def _wan():
         return patch(
@@ -933,96 +919,7 @@ class TestLTXShapeValidation:
             return_value=MagicMock(model_runner=ModelRunners.TT_WAN_2_2.value),
         )
 
-    def test_prompt_only_resolves_to_served_shape(self):
-        """The pre-existing client contract: no shape fields at all."""
-        served = ltx_served_shape()
-        with self._ltx():
-            r = VideoGenerateRequest(prompt="A cat walking in the park")
-        assert r.num_frames == served.num_frames
-        assert (r.height, r.width) == (served.height, served.width)
-        assert r.fps == served.fps
-        assert r.duration == pytest.approx(served.num_frames / served.fps)
-        assert r.num_inference_steps == LTX_NUM_INFERENCE_STEPS
-
-    @pytest.mark.parametrize("duration", [6, 6.0, 6.12])
-    def test_duration_snaps_to_served_frame_count(self, duration):
-        """6s at 25fps is 150 frames, which is not 8k+1; it snaps to 153."""
-        with self._ltx():
-            r = VideoGenerateRequest(prompt="p", duration=duration)
-        assert r.num_frames == ltx_served_shape().num_frames
-
-    def test_explicit_served_shape_accepted(self):
-        served = ltx_served_shape()
-        with self._ltx():
-            r = VideoGenerateRequest(
-                prompt="p",
-                duration=6,
-                fps=served.fps,
-                height=served.height,
-                width=served.width,
-            )
-        assert r.num_frames == served.num_frames
-
-    def test_explicit_num_frames_accepted(self):
-        with self._ltx():
-            r = VideoGenerateRequest(
-                prompt="p", num_frames=ltx_served_shape().num_frames
-            )
-        assert r.num_frames == ltx_served_shape().num_frames
-
-    def test_short_duration_rejected(self):
-        """5.8s snaps to 145 frames, which under-delivers and is not served."""
-        with self._ltx(), pytest.raises(ValidationError, match="not served"):
-            VideoGenerateRequest(prompt="p", duration=5.8)
-
-    def test_illegal_frame_count_rejected(self):
-        """150 is not 8k+1 and is not the served count."""
-        with self._ltx(), pytest.raises(ValidationError, match="not served"):
-            VideoGenerateRequest(prompt="p", num_frames=150)
-
-    def test_mismatched_fps_rejected(self):
-        with self._ltx(), pytest.raises(ValidationError, match="fps=24 is not served"):
-            VideoGenerateRequest(prompt="p", fps=24)
-
-    def test_mismatched_height_rejected(self):
-        with self._ltx(), pytest.raises(ValidationError, match="height=720"):
-            VideoGenerateRequest(prompt="p", height=720)
-
-    def test_mismatched_width_rejected(self):
-        with self._ltx(), pytest.raises(ValidationError, match="width=1280"):
-            VideoGenerateRequest(prompt="p", width=1280)
-
-    def test_duration_contradicting_num_frames_rejected(self):
-        with self._ltx(), pytest.raises(ValidationError, match="contradicts"):
-            VideoGenerateRequest(prompt="p", duration=6, num_frames=145)
-
-    def test_error_message_names_the_served_shape(self):
-        """A 422 the caller can act on without reading the source."""
-        served = ltx_served_shape()
-        with self._ltx(), pytest.raises(ValidationError) as exc:
-            VideoGenerateRequest(prompt="p", fps=24)
-        msg = str(exc.value)
-        assert str(served.num_frames) in msg
-        assert f"{served.height}x{served.width}" in msg
-
-    def test_fixed_step_count_reported_not_echoed(self):
-        """The job record reports the fixed schedule, not a client step count."""
-        with self._ltx():
-            r = VideoGenerateRequest(prompt="p")
-        assert r.num_inference_steps == LTX_NUM_INFERENCE_STEPS
-        with self._ltx():
-            r = VideoGenerateRequest(
-                prompt="p", num_inference_steps=LTX_NUM_INFERENCE_STEPS
-            )
-        assert r.num_inference_steps == LTX_NUM_INFERENCE_STEPS
-
-    def test_client_supplied_step_count_rejected(self):
-        with self._ltx(), pytest.raises(ValidationError, match="fixed distilled"):
-            VideoGenerateRequest(prompt="p", num_inference_steps=20)
-
-    # --- the other video models must be unaffected -------------------------
-
-    def test_non_ltx_keeps_default_step_count(self):
+    def test_keeps_default_step_count(self):
         with self._wan():
             r = VideoGenerateRequest(prompt="p")
         assert r.num_inference_steps == DEFAULT_VIDEO_INFERENCE_STEPS
@@ -1030,7 +927,7 @@ class TestLTXShapeValidation:
     @pytest.mark.parametrize(
         "steps", [MIN_VIDEO_INFERENCE_STEPS, 20, MAX_VIDEO_INFERENCE_STEPS]
     )
-    def test_non_ltx_accepts_conventional_step_range(self, steps):
+    def test_accepts_conventional_step_range(self, steps):
         with self._wan():
             r = VideoGenerateRequest(prompt="p", num_inference_steps=steps)
         assert r.num_inference_steps == steps
@@ -1038,24 +935,18 @@ class TestLTXShapeValidation:
     @pytest.mark.parametrize(
         "steps", [MIN_VIDEO_INFERENCE_STEPS - 1, MAX_VIDEO_INFERENCE_STEPS + 1]
     )
-    def test_non_ltx_still_enforces_step_bounds(self, steps):
+    def test_still_enforces_step_bounds(self, steps):
         """Defaulting the field to None must not relax the shared step bounds."""
         with self._wan(), pytest.raises(ValidationError):
             VideoGenerateRequest(prompt="p", num_inference_steps=steps)
 
-    def test_non_ltx_leaves_shape_fields_unresolved(self):
+    def test_leaves_shape_fields_unresolved(self):
         """Wan resolves its shape from settings/mesh, so the request must not
         pin one. sp_runner's `or DEFAULT` turns these Nones into its defaults."""
         with self._wan():
             r = VideoGenerateRequest(prompt="p")
         assert r.height is None and r.width is None
         assert r.num_frames is None and r.fps is None
-
-    # --- LTX and MiniMax-H3 refuse each other's shape fields ----------------
-
-    def test_ltx_rejects_h3_aspect_ratio(self):
-        with self._ltx(), pytest.raises(ValidationError, match="not supported"):
-            VideoGenerateRequest(prompt="p", aspect_ratio="16:9")
 
     @pytest.mark.parametrize(
         "field,value",

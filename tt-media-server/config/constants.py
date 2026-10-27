@@ -213,6 +213,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_QWEN_IMAGE_EDIT_2511,
         ModelRunners.TT_FLUX_2_KLEIN_4B,
         ModelRunners.TT_IDEOGRAM_4,
+        ModelRunners.TT_LTX_2_3_DISTILLED,
     },
     ModelServices.IMAGE: {
         ModelRunners.TT_SDXL_EDIT,
@@ -269,7 +270,6 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_WAN_2_2_I2V_DISTILL,
         ModelRunners.TT_WAN_2_2_I2V_LORA,
         ModelRunners.TT_WAN_2_2_I2V_LIGHTNING,
-        ModelRunners.TT_LTX_2_3_DISTILLED,
         ModelRunners.TT_MINIMAX_H3_T2VA,
         ModelRunners.TT_MINIMAX_H3_FL2VA,
         ModelRunners.TT_MINIMAX_H3_REF2VA,
@@ -597,46 +597,17 @@ def wan22_target_resolution(mesh_shape: Tuple[int, int]) -> Resolution:
 # create_pipeline, not only generate(), or lip sync drifts.
 # 153f relies on the latent T=20 conv3d blocking entries in
 # models/tt_dit/utils/conv3d.py; without them decode is ~2x slower.
-# The shape is baked into the captured traces, so a request may only ask for the
-# shape this process serves; see ltx_served_shape().
-
-
-class VideoShapeConfig(NamedTuple):
-    """One servable video generation shape. Fixed at pipeline construction."""
-
-    num_frames: int
-    height: int
-    width: int
-    fps: float
-
+# The shape is baked into the captured traces, so a request may only ask for
+# this one.
 
 # Mirrors TEMPORAL_COMPRESSION in models/tt_dit/utils/ltx.py. tt-metal does not
 # assert 8k+1 frame counts (others silently truncate), hence snap_num_frames.
 LTX_TEMPORAL_COMPRESSION = 8
-# LTXDistilledPipeline.generate() asserts height % 64 == 0 and width % 64 == 0.
-LTX_SPATIAL_MULTIPLE = 64
 
-LTX_SHAPE_1080P_6S_25FPS = VideoShapeConfig(
-    num_frames=153, height=1088, width=1920, fps=25.0
-)
-
-# Shapes the pipeline may be built with; ltx_served_shape() is the one this process
-# has traces for, and is what requests are validated against.
-LTX_ACCEPTED_SHAPES = frozenset({LTX_SHAPE_1080P_6S_25FPS})
-
-LTX_NUM_FRAMES = LTX_SHAPE_1080P_6S_25FPS.num_frames
-LTX_HEIGHT = LTX_SHAPE_1080P_6S_25FPS.height
-LTX_WIDTH = LTX_SHAPE_1080P_6S_25FPS.width
-LTX_FPS = LTX_SHAPE_1080P_6S_25FPS.fps
-
-# Fixed by the distilled sigma schedules (8 stage-1 + 3 stage-2 steps); the
-# pipeline takes no step count.
-LTX_NUM_INFERENCE_STEPS = 11
-
-
-def ltx_served_shape() -> VideoShapeConfig:
-    """The shape this process's pipeline was built with (and captured traces for)."""
-    return LTX_SHAPE_1080P_6S_25FPS
+LTX_NUM_FRAMES = 153
+LTX_HEIGHT = 1088
+LTX_WIDTH = 1920
+LTX_FPS = 25.0
 
 
 def snap_num_frames(n: int) -> int:
@@ -722,6 +693,12 @@ def job_database_path() -> str:
 # One directory per generation job, holding its output files and their manifest.
 def generations_root() -> str:
     return os.getenv("TT_GENERATIONS_DIR", "/tmp/generations")
+
+
+# A generation job's directory: its result path from submit on, so whatever a
+# runner leaves in it goes with the job.
+def generation_job_dir(job_id: str) -> str:
+    return os.path.normpath(os.path.join(generations_root(), job_id))
 
 
 # Helper function to create vLLM configuration with late import to avoid circular imports

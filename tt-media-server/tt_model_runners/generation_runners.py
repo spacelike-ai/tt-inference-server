@@ -16,12 +16,24 @@ models' reference defaults.
 """
 
 import os
+import shutil
+from pathlib import Path
 
-from config.constants import WAN22_NUM_FRAMES, Resolution
+import ttnn
+from config.constants import (
+    LTX_FPS,
+    LTX_HEIGHT,
+    LTX_NUM_FRAMES,
+    LTX_WIDTH,
+    WAN22_NUM_FRAMES,
+    Resolution,
+    generation_job_dir,
+)
 from config.settings import get_settings
 from domain.flux2_klein_4b_request import KLEIN_STEPS, Flux2klein4bRequest
 from domain.generation_request import GenerationRequest
 from domain.ideogram4_request import IDEOGRAM_PRESETS, Ideogram4Request
+from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.qwen_image_edit_2511_request import QwenImageEdit2511Request
 from domain.wan22_i2v_a14b_request import Wan22i2vA14bRequest
 from huggingface_hub import snapshot_download
@@ -33,6 +45,7 @@ from tt_model_runners.dit_runners import (
     TTDiTRunner,
     TTQwenImageRunner,
     TTWan22I2VRunner,
+    _wan22_dit_device_params,
     dit_runner_log_map,
 )
 from utils.decorators import log_execution_time
@@ -304,3 +317,85 @@ class TTIdeogram4Runner(_GenerationRunner):
         if recorder is not None:
             recorder.flush(images)
         return images
+
+
+class TTLtx23DistilledRunner(_GenerationRunner):
+    def create_pipeline(self):
+        from models.tt_dit.pipelines.ltx.pipeline_ltx_distilled import (
+            LTXDistilledPipeline,
+        )
+        from models.tt_dit.utils.ltx import default_ltx_gemma
+
+        # The (4, 8) Blackhole Galaxy ring, as LTXPipeline.create_pipeline's
+        # own 4x8 entry. The shape and fps are fixed here: fps sets the audio
+        # length and the audio-video positions, which the traces bake in.
+        try:
+            return LTXDistilledPipeline.create_pipeline(
+                mesh_device=self.ttnn_device,
+                checkpoint_name=self.settings.model_weights_path,
+                gemma_path=default_ltx_gemma(),
+                sp_axis=1,
+                tp_axis=0,
+                num_links=2,
+                dynamic_load=False,
+                topology=ttnn.Topology.Ring,
+                is_fsdp=False,
+                traced=True,
+                num_frames=LTX_NUM_FRAMES,
+                height=LTX_HEIGHT,
+                width=LTX_WIDTH,
+                fps=LTX_FPS,
+                image_conditioning=False,
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger,
+                self.device_id,
+                "LTX-2.3 distilled pipeline creation failed",
+                e,
+            )
+            raise
+
+    def load_weights(self):
+        return False
+
+    def get_pipeline_device_params(self):
+        # The Wan2.2 ring and fabric defaults, plus L1_SMALL for the audio
+        # vocoder (without it: "bank size is 0 B") and the region for the two
+        # traced stages, from tt-metal's
+        # models/tt_dit/tests/models/ltx/ltx_mesh_params.py.
+        device_params = _wan22_dit_device_params(self.settings.device_mesh_shape)
+        device_params["l1_small_size"] = 32768
+        device_params["trace_region_size"] = 500_000_000
+        return device_params
+
+    def warmup_requests(self) -> list[GenerationRequest]:
+        # The first traced call captures the traces of the one shape served.
+        return [
+            _warmup_request(Ltx23DistilledRequest.model_construct(), width, height)
+            for width, height in Ltx23DistilledRequest.warmup_sizes()
+        ]
+
+    @_inference_timer
+    def run(self, requests: list[Ltx23DistilledRequest]):
+        request = requests[0]
+        # Into the job's directory, so a file a cancelled or failed job leaves
+        # behind is deleted with it.
+        directory = Path(generation_job_dir(request._task_id))
+        directory.mkdir(parents=True, exist_ok=True)
+        try:
+            # generate() writes an MP4 with the soundtrack and returns its path.
+            path = self.pipeline.generate(
+                request._prompt,
+                output_path=str(directory / "ltx.mp4"),
+                num_frames=request.frames,
+                height=request._height,
+                width=request._width,
+                seed=request._seed,
+                fps=request.fps,
+            )
+        finally:
+            if self._warming_up:
+                # No job owns warmup's video.
+                shutil.rmtree(directory, ignore_errors=True)
+        return [path]
