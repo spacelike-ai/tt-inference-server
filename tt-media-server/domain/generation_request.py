@@ -12,33 +12,69 @@ from pydantic import AfterValidator, ConfigDict, Field, PrivateAttr
 
 MAX_SEED = 2**31 - 1
 
-_DATA_URI = re.compile(r"^data:image/[a-z0-9.+-]+;base64,", re.IGNORECASE)
 # An output's `url` on this server.
 OUTPUT_URL = re.compile(r"^/v1/jobs/([^/]+)/content/([0-9]+)$")
 
+MediaKind = Literal["image", "video", "audio"]
+# Per file, inline or fetched.
+MEDIA_MAX_BYTES: dict[str, int] = {
+    "image": 30_000_000,
+    "video": 50_000_000,
+    "audio": 15_000_000,
+}
 
-def _check_media(value: str) -> str:
-    if (
-        value.startswith("https://")
-        or _DATA_URI.match(value)
-        or OUTPUT_URL.match(value)
-    ):
-        return value
-    raise ValueError(
-        "must be an https:// URL, a base64 data URI (data:image/png;base64,...) "
-        "or an earlier output's url"
-    )
+
+def _media_checker(kind: MediaKind, example: str):
+    data_uri = re.compile(rf"^data:{kind}/[a-z0-9.+-]+;base64,", re.IGNORECASE)
+
+    def check(value: str) -> str:
+        if (
+            value.startswith("https://")
+            or data_uri.match(value)
+            # Earlier outputs are images or videos.
+            or (kind != "audio" and OUTPUT_URL.match(value))
+        ):
+            return value
+        raise ValueError(
+            f"must be an https:// URL, a base64 data URI ({example})"
+            + (" or an earlier output's url" if kind != "audio" else "")
+        )
+
+    return AfterValidator(check)
 
 
 Media = Annotated[
     str,
-    AfterValidator(_check_media),
+    _media_checker("image", "data:image/png;base64,..."),
     Field(
         description=(
             "An `https://` URL, which the server fetches when the job is "
             "submitted, or a data URI (`data:image/png;base64,…`). An earlier "
             "output is passed by its `url`. PNG, JPEG or WebP, at most 30 MB per "
             "image."
+        )
+    ),
+]
+VideoMedia = Annotated[
+    str,
+    _media_checker("video", "data:video/mp4;base64,..."),
+    Field(
+        description=(
+            "An `https://` URL, which the server fetches when the job is "
+            "submitted, or a data URI (`data:video/mp4;base64,…`). An earlier "
+            "video output is passed by its `url`. MP4, MOV or another format "
+            "FFmpeg reads, with a frame rate; at most 50 MB per video."
+        )
+    ),
+]
+AudioMedia = Annotated[
+    str,
+    _media_checker("audio", "data:audio/wav;base64,..."),
+    Field(
+        description=(
+            "An `https://` URL, which the server fetches when the job is "
+            "submitted, or a data URI (`data:audio/wav;base64,…`). WAV, MP3 or "
+            "another format FFmpeg reads, mono or stereo; at most 15 MB per clip."
         )
     ),
 ]
@@ -88,10 +124,22 @@ class GenerationRequest(BaseRequest):
     OUTPUT_TYPE: ClassVar[Literal["image", "video"]]
     # Whether the video has a soundtrack.
     AUDIO: ClassVar[bool] = False
-    # Fields holding Media, alone or in a list.
+    # Fields holding media, alone or in a list.
     MEDIA_FIELDS: ClassVar[tuple[str, ...]] = ()
+    # The kind of each media field that does not hold images.
+    MEDIA_KINDS: ClassVar[dict[str, MediaKind]] = {}
+    # All data URIs of one request together, in characters, if limited.
+    INLINE_MEDIA_MAX_CHARS: ClassVar[int | None] = None
+    # Whether the runner decodes the input images from their files. The
+    # request then carries files rather than pixels to the device worker and
+    # to the other ranks of a multi-host mesh: a decoded image can be a
+    # hundred times its file.
+    RUNNER_DECODES_IMAGES: ClassVar[bool] = False
 
     _images: dict[str, list[Image.Image]] = PrivateAttr(default_factory=dict)
+    # The input files, and the metadata probed from videos and audio clips.
+    _files: dict[str, list[bytes]] = PrivateAttr(default_factory=dict)
+    _probes: dict[str, list[object]] = PrivateAttr(default_factory=dict)
     _width: int = PrivateAttr(default=0)
     _height: int = PrivateAttr(default=0)
     _seed: int = PrivateAttr(default=0)
@@ -109,6 +157,15 @@ class GenerationRequest(BaseRequest):
             if value is not None:
                 media[name] = value if isinstance(value, list) else [value]
         return media
+
+    @classmethod
+    def media_kind(cls, name: str) -> MediaKind:
+        return cls.MEDIA_KINDS.get(name, "image")
+
+    def media_errors(self) -> list[tuple[str, int, str]]:
+        """(field, index, message) for each loaded input the model cannot
+        take, from what the schema cannot see: image sizes, clip lengths."""
+        return []
 
     def output_size(self) -> tuple[int, int]:
         """(width, height) of the outputs, from the fields and the decoded input

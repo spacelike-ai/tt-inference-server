@@ -222,15 +222,17 @@ components:
             $ref: "#/components/schemas/Error"
     MediaUrlNotAllowed:
       description: |
-        An image URL violates this deployment's fetch policy: not `https`, a
+        A media URL violates this deployment's fetch policy: not `https`, a
         host outside the allowlist, or an address that isn't public.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
     MediaTooLarge:
-      description: An image, inline or fetched, is over the per-image limit (30 
-        MB).
+      description: |
+        An input, inline or fetched, is over its per-file limit (images 30 MB,
+        videos 50 MB, audio 15 MB), or a request's data URIs are together over
+        the model's limit, if it has one.
       content:
         application/json:
           schema:
@@ -310,6 +312,20 @@ components:
 
         **Elsewhere:** fal, Replicate, OpenAI, OpenRouter: URL or data URI.
         BFL and tt-media-server today: URL or bare base64.
+    VideoMedia:
+      type: string
+      description: |
+        A video input, given as for `Media`: an `https://` URL or a data URI
+        (`data:video/mp4;base64,…`); an earlier video output is passed by its
+        `url`. MP4, MOV or another format FFmpeg reads, with a frame rate; at
+        most 50 MB per video. Submission fails with 422 if it can't be read.
+    AudioMedia:
+      type: string
+      description: |
+        An audio input, given as for `Media`: an `https://` URL or a data URI
+        (`data:audio/wav;base64,…`). WAV, MP3 or another format FFmpeg reads,
+        mono or stereo; at most 15 MB per clip. Submission fails with 422 if it
+        can't be read.
     Seed:
       type: integer
       minimum: 0

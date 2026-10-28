@@ -15,12 +15,18 @@ format or quantization suffixes. Models covered:
 | FLUX.2 klein 4B | `POST /v1/generations/black-forest-labs/flux.2-klein-4b` |
 | FLUX.3 Image klein | `POST /v1/generations/black-forest-labs/flux-3-image-klein` |
 | Ideogram 4 | `POST /v1/generations/ideogram-ai/ideogram-4` |
+| LTX-2.3 distilled | `POST /v1/generations/lightricks/ltx-2.3-distilled` |
+| MiniMax-H3 | `POST /v1/generations/minimaxai/minimax-h3` |
+| MiniMax-H3 FastH3 | `POST /v1/generations/minimaxai/minimax-h3-fasth3` |
+| MiniMax-H3 Ref2VA | `POST /v1/generations/minimaxai/minimax-h3-ref2va` |
+| MiniMax-H3 Turbo | `POST /v1/generations/lightx2v/minimax-h3-turbo` |
+| MiniMax-H3 Turbo Ref2VA | `POST /v1/generations/lightx2v/minimax-h3-turbo-ref2va` |
 
 ## Files
 
 - `common.yaml`: the `/v1/jobs` API and everything the models share: schemas
-  (`Media`, `Seed`, `ImageFormat`, `Job`, outputs, errors), responses and
-  auth. Its description covers the API as a whole.
+  (`Media`, `VideoMedia`, `AudioMedia`, `Seed`, `ImageFormat`, `Job`, outputs,
+  errors), responses and auth. Its description covers the API as a whole.
 - `models/{org}/{model}.yaml`: one complete OpenAPI file per model, describing
   what that model's deployment serves: its submit endpoint and request schema,
   plus `/v1/jobs` by reference to `common.yaml`.

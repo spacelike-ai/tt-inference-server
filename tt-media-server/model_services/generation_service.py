@@ -11,29 +11,32 @@ import json
 import secrets
 import shutil
 import time
-from io import BytesIO
 from pathlib import Path
 from typing import Any
 
 from config.constants import JobTypes, generation_job_dir
 from config.settings import settings
-from domain.generation_request import MAX_SEED, OUTPUT_URL, GenerationRequest
+from domain.generation_request import (
+    MAX_SEED,
+    MEDIA_MAX_BYTES,
+    OUTPUT_URL,
+    GenerationRequest,
+)
 from fastapi import HTTPException
 from fastapi.exceptions import RequestValidationError
 from model_services.base_job_service import BaseJobService
-from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL import UnidentifiedImageError
 from utils.media_downloader import (
     MediaDownloadFetchError,
     MediaDownloadPolicyError,
     MediaDownloadTooLargeError,
     download_media_url,
 )
+from utils.media_probe import decode_image, probe_reference_media
 from utils.video_manager import VideoAudioResult, VideoManager, probe_video
 
 # The file in a job's directory listing its outputs.
 MANIFEST = "outputs.json"
-# Per input image, inline or fetched.
-MEDIA_MAX_BYTES = 30_000_000
 
 _IMAGE_FORMATS = {
     "png": ("PNG", "image/png"),
@@ -42,31 +45,21 @@ _IMAGE_FORMATS = {
 }
 
 
-def _too_large() -> HTTPException:
+def _too_large(kind: str) -> HTTPException:
     return HTTPException(
-        status_code=413, detail=f"An image is over {MEDIA_MAX_BYTES} bytes"
+        status_code=413,
+        detail=(
+            f"{'An' if kind[0] in 'aeiou' else 'A'} {kind} input is over "
+            f"{MEDIA_MAX_BYTES[kind]} bytes"
+        ),
     )
 
 
-def _decode_data_uri(uri: str) -> bytes:
+def _decode_data_uri(uri: str, kind: str) -> bytes:
     data = base64.b64decode(uri.split(",", 1)[1], validate=True)
-    if len(data) > MEDIA_MAX_BYTES:
-        raise _too_large()
+    if len(data) > MEDIA_MAX_BYTES[kind]:
+        raise _too_large(kind)
     return data
-
-
-def _decode_image(data: bytes) -> Image.Image:
-    too_large = ValueError(f"image has more than {Image.MAX_IMAGE_PIXELS} pixels")
-    try:
-        image = Image.open(BytesIO(data))
-    except Image.DecompressionBombError:
-        raise too_large
-    # Checked before decoding: PIL only refuses twice the limit.
-    if Image.MAX_IMAGE_PIXELS and image.width * image.height > Image.MAX_IMAGE_PIXELS:
-        raise too_large
-    image.load()
-    # Upright, as camera photos with an EXIF orientation are meant to be seen.
-    return ImageOps.exif_transpose(image).convert("RGB")
 
 
 def _request_parameters(request: GenerationRequest) -> dict:
@@ -136,8 +129,10 @@ class GenerationService(BaseJobService):
                 headers={"Retry-After": "30"},
             )
 
-        await self._load_images(request)
+        await self._load_media(request)
         request._width, request._height = request.output_size()
+        if request.RUNNER_DECODES_IMAGES:
+            request._images = {}
         request._seed = (
             request.seed
             if request.seed is not None
@@ -163,49 +158,83 @@ class GenerationService(BaseJobService):
             result_path=generation_job_dir(request._task_id),
         )
 
-    async def _load_images(self, request: GenerationRequest) -> None:
-        """Fetch and decode every input image, reporting all the bad ones.
+    async def _load_media(self, request: GenerationRequest) -> None:
+        """Fetch every input, decode the images and probe the clips, and
+        check them against the model, reporting all the bad ones.
 
-        A URL the fetch policy refuses is a 400 and an image over the size
+        A URL the fetch policy refuses is a 400 and an input over its size
         limit a 413, as for the rest of the server's media URLs; every other
         problem is a 422.
         """
+        media = request.media()
+        inline = sum(
+            len(value)
+            for values in media.values()
+            for value in values
+            if value[:5].lower() == "data:"
+        )
+        limit = request.INLINE_MEDIA_MAX_CHARS
+        if limit is not None and inline > limit:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"The data URIs are {inline} characters together, over "
+                    f"{limit}; send large inputs by URL"
+                ),
+            )
         deadline = time.monotonic() + settings.media_url_timeout_seconds
         errors = []
-        for name, values in request.media().items():
+
+        def error(name: str, index: int, message: str) -> None:
             is_list = isinstance(getattr(request, name), list)
-            images = []
+            loc = ("body", name, index) if is_list else ("body", name)
+            errors.append({"loc": loc, "msg": message, "type": "value_error"})
+
+        for name, values in media.items():
+            kind = request.media_kind(name)
+            loaded = []
             for index, value in enumerate(values):
-                loc = ("body", name, index) if is_list else ("body", name)
                 try:
                     if value.startswith("https://"):
                         data = await download_media_url(
-                            value, deadline=deadline, max_bytes=MEDIA_MAX_BYTES
+                            value, deadline=deadline, max_bytes=MEDIA_MAX_BYTES[kind]
                         )
                     elif output_url := OUTPUT_URL.match(value):
-                        data = self._read_output(*output_url.groups())
+                        data = self._read_output(*output_url.groups(), kind)
                     else:
-                        data = _decode_data_uri(value)
-                    images.append(await asyncio.to_thread(_decode_image, data))
+                        data = _decode_data_uri(value, kind)
+                    if kind == "image":
+                        decoded = await asyncio.to_thread(decode_image, data)
+                    else:
+                        decoded = await asyncio.to_thread(probe_reference_media, data)
+                    loaded.append((data, decoded))
                 except MediaDownloadPolicyError as e:
                     raise HTTPException(status_code=400, detail=str(e))
                 except MediaDownloadTooLargeError:
-                    raise _too_large()
+                    raise _too_large(kind)
                 except (MediaDownloadFetchError, binascii.Error, ValueError) as e:
-                    errors.append({"loc": loc, "msg": str(e), "type": "value_error"})
+                    error(name, index, str(e))
                 except (UnidentifiedImageError, OSError):
-                    errors.append(
-                        {
-                            "loc": loc,
-                            "msg": "not a decodable image (PNG, JPEG, WebP, ...)",
-                            "type": "value_error",
-                        }
+                    error(
+                        name,
+                        index,
+                        "not a decodable image (PNG, JPEG, WebP, ...)"
+                        if kind == "image"
+                        else "not a readable video or audio file",
                     )
-            request._images[name] = images
+            request._files[name] = [data for data, _ in loaded]
+            decoded = [decoded for _, decoded in loaded]
+            if kind == "image":
+                request._images[name] = decoded
+            else:
+                request._probes[name] = decoded
+        if not errors:
+            for name, index, message in request.media_errors():
+                error(name, index, message)
         if errors:
             raise RequestValidationError(errors)
 
-    def _read_output(self, job_id: str, index: str) -> bytes:
+    def _read_output(self, job_id: str, index: str, kind: str) -> bytes:
         """The file of an earlier job's output, by the parts of its `url`."""
         # A job's result path is set from submit on, so it says nothing about
         # whether the job finished.
@@ -225,9 +254,12 @@ class GenerationService(BaseJobService):
         if int(index) >= len(outputs):
             raise ValueError(f"job {job_id} has {len(outputs)} outputs")
         output = outputs[int(index)]
-        if output["type"] != "image":
-            raise ValueError(f"output {index} of job {job_id} is not an image")
-        return (Path(result_path) / output["file"]).read_bytes()
+        if output["type"] != kind:
+            raise ValueError(f"output {index} of job {job_id} is not an {kind}")
+        try:
+            return (Path(result_path) / output["file"]).read_bytes()
+        except FileNotFoundError:
+            raise ValueError(f"the outputs of job {job_id} are gone")
 
     async def pre_process(self, request: GenerationRequest) -> GenerationRequest:
         request._prompt = request.model_prompt()

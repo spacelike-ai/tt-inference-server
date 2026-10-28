@@ -112,6 +112,11 @@ def test_other_i2v_variants_keep_the_video_api(monkeypatch):
             "http://h/v1/jobs/job-1/content/0",
         ),
         (
+            "MiniMax-H3-Ref2VA-LightX2V",
+            "v1/jobs/job-1",
+            "http://h/v1/jobs/job-1/content/0",
+        ),
+        (
             "Wan2.2-I2V-Lightning",
             "v1/videos/generations/job-1",
             "http://h/v1/videos/generations/job-1/download",
@@ -140,7 +145,7 @@ def test_job_status_and_download_urls(monkeypatch, model_name, status, download)
     assert (
         routing.get_video_download_url("http://h", model_name, "job-1", {}) == download
     )
-    if model_name.startswith("Wan2.2-I2V-A14B"):
+    if routing.uses_generations_api(model_name):
         assert requested == ["http://h/v1/jobs/job-1"]
 
 
@@ -178,7 +183,7 @@ def test_minimax_h3_fl2va_lightx2v_has_its_four_step_profile():
 
 
 def test_minimax_h3_fl2va_generation_sends_only_fields_h3_accepts(monkeypatch):
-    # H3 refuses num_inference_steps and negative_prompt with 422; the shape is chosen with
+    # H3 takes no num_inference_steps or negative_prompt; the shape is chosen with
     # duration and an explicit canvas, and the keyframe goes in as the first frame.
     captured = {}
 
@@ -204,6 +209,7 @@ def test_minimax_h3_fl2va_generation_sends_only_fields_h3_accepts(monkeypatch):
     ctx = SimpleNamespace(
         model_spec=SimpleNamespace(model_name="MiniMax-H3-FL2VA-LightX2V"),
         base_url="http://localhost:8000",
+        device=SimpleNamespace(name="BLACKHOLE_GALAXY"),
     )
     ok, _elapsed, job_id, _path = mod._generate_video(
         ctx, prompt="a volcano erupting", num_inference_steps=4, image_b64="ZmFrZQ=="
@@ -211,14 +217,14 @@ def test_minimax_h3_fl2va_generation_sends_only_fields_h3_accepts(monkeypatch):
 
     assert ok is True
     assert job_id == "job-h3"
-    assert captured["url"].endswith("v1/videos/generations/i2v")
+    assert captured["url"].endswith("v1/generations/lightx2v/minimax-h3-turbo")
     assert captured["payload"] == {
         "prompt": "a volcano erupting",
         "duration": 5,
         "height": 768,
         "width": 1344,
         "seed": 0,
-        "image_prompts": [{"image": "ZmFrZQ==", "frame_pos": 0}],
+        "first_frame": "data:image/jpeg;base64,ZmFrZQ==",
     }
     assert captured["poll_timeout"] > mod.DEFAULT_VIDEO_TIMEOUT_SECONDS
 
@@ -244,8 +250,8 @@ def test_minimax_h3_ref2va_lightx2v_has_its_four_step_profile():
 
 
 def test_minimax_h3_ref2va_generation_sends_one_reference_image(monkeypatch):
-    # A Ref2VA deployment refuses /generations and /i2v; the image goes in as an unpinned
-    # reference, and the adapter's own canvas is left to the server (aspect_ratio only).
+    # The image goes in as a reference, and the adapter's own canvas is left to the server
+    # (aspect_ratio only).
     captured = {}
 
     class _Resp:
@@ -270,6 +276,7 @@ def test_minimax_h3_ref2va_generation_sends_one_reference_image(monkeypatch):
     ctx = SimpleNamespace(
         model_spec=SimpleNamespace(model_name="MiniMax-H3-Ref2VA-LightX2V"),
         base_url="http://localhost:8000",
+        device=SimpleNamespace(name="BLACKHOLE_GALAXY"),
     )
     ok, _elapsed, job_id, _path = mod._generate_video(
         ctx, prompt="a volcano erupting", num_inference_steps=4, image_b64="ZmFrZQ=="
@@ -277,13 +284,13 @@ def test_minimax_h3_ref2va_generation_sends_one_reference_image(monkeypatch):
 
     assert ok is True
     assert job_id == "job-ref"
-    assert captured["url"].endswith("v1/videos/generations/ref2va")
+    assert captured["url"].endswith("v1/generations/lightx2v/minimax-h3-turbo-ref2va")
     assert captured["payload"] == {
         "prompt": "a volcano erupting",
         "duration": 5,
         "aspect_ratio": "16:9",
         "seed": 0,
-        "references": {"images": [{"b64": "ZmFrZQ=="}]},
+        "images": ["data:image/jpeg;base64,ZmFrZQ=="],
     }
     assert captured["poll_timeout"] > mod.DEFAULT_VIDEO_TIMEOUT_SECONDS
 
@@ -302,3 +309,33 @@ def test_minimax_h3_ref2va_benchmark_loads_the_reference(monkeypatch):
     (status,) = mod._run_video_generation_benchmark(ctx, 1)
     assert seen["image_b64"] == "a2V5"
     assert status.num_inference_steps == 4
+
+
+@pytest.mark.parametrize(
+    ("model_name", "endpoint", "keys"),
+    [
+        (
+            "MiniMax-H3-FL2VA",
+            "v1/generations/minimaxai/minimax-h3",
+            {"prompt", "duration", "seed", "width", "height", "first_frame"},
+        ),
+        (
+            "MiniMax-H3-FastH3",
+            "v1/generations/minimaxai/minimax-h3-fasth3",
+            {"prompt", "duration", "seed", "width", "height"},
+        ),
+        (
+            "MiniMax-H3-Ref2VA",
+            "v1/generations/minimaxai/minimax-h3-ref2va",
+            {"prompt", "duration", "seed", "aspect_ratio", "images"},
+        ),
+    ],
+)
+def test_every_minimax_h3_model_routes_to_the_generations_api(
+    model_name, endpoint, keys
+):
+    assert routing.get_video_generation_submit_endpoint(model_name) == endpoint
+    payload = routing.build_video_generation_payload(
+        prompt="x", num_inference_steps=50, model_name=model_name, image_b64="ZmFrZQ=="
+    )
+    assert set(payload) == keys

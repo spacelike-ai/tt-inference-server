@@ -60,11 +60,7 @@ from config.constants import (
     CANARY_TASK_IDS,
     ModelRunners,
 )
-from domain.video_generate_request import (
-    _H3_UNREAD_FIELDS,
-    VideoGenerateRequest,
-    _is_minimax_h3,
-)
+from domain.video_generate_request import VideoGenerateRequest
 from domain.video_i2v_generate_request import (
     ImagePromptEntry,
     VideoI2VGenerateRequest,
@@ -159,12 +155,6 @@ def _attach_mpi_comm():
 def _create_dit_runner(model_runner: str, rank: int):
     """Create the appropriate DiT runner (lazy import to avoid loading ttnn globally)."""
     from tt_model_runners.dit_runners import (
-        TTMiniMaxFastH3Runner,
-        TTMiniMaxH3FL2VALightX2VRunner,
-        TTMiniMaxH3FL2VARunner,
-        TTMiniMaxH3Ref2VALightX2VRunner,
-        TTMiniMaxH3Ref2VARunner,
-        TTMiniMaxH3Runner,
         TTMochi1Runner,
         TTWan22I2VAniSoraRunner,
         TTWan22I2VDistillRunner,
@@ -184,12 +174,6 @@ def _create_dit_runner(model_runner: str, rank: int):
         ModelRunners.TT_WAN_2_2_I2V_DISTILL.value: TTWan22I2VDistillRunner,
         ModelRunners.TT_WAN_2_2_I2V_LORA.value: TTWan22I2VLoRARunner,
         ModelRunners.TT_WAN_2_2_I2V_LIGHTNING.value: TTWan22I2VLightningRunner,
-        ModelRunners.TT_MINIMAX_H3_T2VA.value: TTMiniMaxH3Runner,
-        ModelRunners.TT_MINIMAX_H3_FL2VA.value: TTMiniMaxH3FL2VARunner,
-        ModelRunners.TT_MINIMAX_H3_REF2VA.value: TTMiniMaxH3Ref2VARunner,
-        ModelRunners.TT_MINIMAX_H3_FASTH3.value: TTMiniMaxFastH3Runner,
-        ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V.value: TTMiniMaxH3FL2VALightX2VRunner,
-        ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V.value: TTMiniMaxH3Ref2VALightX2VRunner,
     }
     runner_class = runner_map.get(model_runner)
     if not runner_class:
@@ -201,18 +185,13 @@ def _create_dit_runner(model_runner: str, rank: int):
     return runner_class("")
 
 
-_SIDE_FILE_KEYS = frozenset({"image_prompts", "references", "aspect_ratio", "duration"})
+def _read_image_prompts_side_file(path: str, task_id: str) -> Optional[List[dict]]:
+    """Load the I2V image_prompts list written by ``SPRunner._write_image_side_file``.
 
-
-def _read_image_prompts_side_file(path: str, task_id: str):
-    """Load the side-file written by ``SPRunner._write_image_side_file``.
-
-    I2V: JSON array of ``{"image", "frame_pos"}``, or an object with
-    ``image_prompts`` plus ``aspect_ratio`` / ``duration``.
-    Ref2VA: JSON object with ``references`` (and optional aspect/duration).
-    T2VA: JSON object with only ``aspect_ratio`` / ``duration`` -- the
-    SHM ``VideoRequest`` has no slot for them, so every task ships them here.
-    Returns the parsed value, or ``None`` on failure.
+    The cross-process contract is a JSON array of ``{"image", "frame_pos"}``
+    dicts (see ``ipc.video_shm.image_prompts_path`` and the SPRunner helper).
+    Returns the parsed list on success, or ``None`` on any failure (missing
+    file, parse error, unexpected top-level shape).
     """
     try:
         with open(path, "r") as f:
@@ -222,25 +201,13 @@ def _read_image_prompts_side_file(path: str, task_id: str):
             f"Rank 0: failed to read I2V side-file {path!r} for task {task_id}: {e}"
         )
         return None
-    if isinstance(data, list):
-        return data
-    if isinstance(data, dict) and _SIDE_FILE_KEYS.intersection(data):
-        return data
-    _log.warning(
-        f"Rank 0: side-file {path!r} for task {task_id} is not an I2V list "
-        f"or an object with any of {sorted(_SIDE_FILE_KEYS)} "
-        f"(got {type(data).__name__})"
-    )
-    return None
-
-
-def _side_payload_has_conditioning(payload) -> bool:
-    """True when a parsed side-file carries image conditioning (i2v entries or
-    ref2va references); False for a payload that only carries request fields
-    such as ``duration``."""
-    if isinstance(payload, dict):
-        return bool(payload.get("image_prompts") or payload.get("references"))
-    return bool(payload)
+    if not isinstance(data, list):
+        _log.warning(
+            f"Rank 0: I2V side-file {path!r} for task {task_id} is not a "
+            f"JSON list (got {type(data).__name__})"
+        )
+        return None
+    return data
 
 
 def _enqueue_rank0_error(
@@ -294,20 +261,12 @@ def _rank0_load_image_prompts(
             f"I2V conditioning side-file unreadable: "
             f"{raw_req.image_path!r} for task {raw_req.task_id}",
         )
-    if isinstance(prompts, list) and not prompts:
+    if not prompts:
         return _enqueue_rank0_error(
             encode_queue,
             raw_req.task_id,
             f"I2V conditioning side-file is an empty list: "
             f"{raw_req.image_path!r} for task {raw_req.task_id}",
-        )
-    if requires_image and not _side_payload_has_conditioning(prompts):
-        return _enqueue_rank0_error(
-            encode_queue,
-            raw_req.task_id,
-            f"I2V request {raw_req.task_id} carries no image conditioning "
-            f"(side-file {raw_req.image_path!r} has only request fields); a "
-            f"text-only request was routed to an I2V runner. Rejecting.",
         )
     return prompts, False
 
@@ -316,11 +275,7 @@ def video_request_to_generate_request(
     req: VideoRequest,
     image_prompts: Optional[List[dict]] = None,
 ) -> VideoGenerateRequest:
-    """Map SHM VideoRequest (+ optional broadcast side-file payload) to a runner request.
-
-    ``image_prompts`` is the parsed side-file: a list of i2v entries, or an
-    object carrying ``aspect_ratio`` / ``duration`` and, optionally,
-    ``image_prompts`` or ``references``.
+    """Map SHM VideoRequest (+ optional broadcast image_prompts) to a runner request.
 
     Uses the intersection of field names so we never pass SHM-only fields (e.g.
     image_path, num_frames) unless they exist on the target request schema.
@@ -332,28 +287,7 @@ def video_request_to_generate_request(
     # The SHM slots are unsigned ints, so 0 stands for an unset canvas.
     base_kwargs["height"] = req.height or None
     base_kwargs["width"] = req.width or None
-    # SHM always carries these (e.g. num_frames, num_inference_steps); H3 does
-    # not read them and refuses them as unknown fields.
-    if _is_minimax_h3():
-        for name in _H3_UNREAD_FIELDS:
-            base_kwargs.pop(name, None)
 
-    if isinstance(image_prompts, dict):
-        # Object payload: request fields the SHM struct cannot carry, plus the
-        # conditioning under ``references`` (ref2va) or ``image_prompts`` (i2v).
-        for name in ("aspect_ratio", "duration"):
-            if image_prompts.get(name) is not None:
-                base_kwargs[name] = image_prompts[name]
-        if "references" in image_prompts:
-            from domain.video_ref2va_generate_request import (
-                VideoRef2VAGenerateRequest,
-            )
-
-            return VideoRef2VAGenerateRequest(
-                **base_kwargs,
-                references=image_prompts["references"],
-            )
-        image_prompts = image_prompts.get("image_prompts")
     if image_prompts:
         return VideoI2VGenerateRequest(
             **base_kwargs,
@@ -421,7 +355,7 @@ def _encoder_loop(
     and error paths. Sentinel ``None`` signals shutdown.
 
     """
-    from utils.video_manager import VideoAudioResult, VideoManager
+    from utils.video_manager import VideoManager
 
     video_manager = VideoManager()
     _log.info("Encoder thread: started")
@@ -459,19 +393,7 @@ def _encoder_loop(
             continue
 
         try:
-            # Audio runners (e.g. MiniMax-H3 t2va) hand back a VideoAudioResult so the
-            # soundtrack is muxed here; everything else hands back a raw frame array.
-            payload = job.frames
-            if isinstance(payload, VideoAudioResult):
-                mp4_path = video_manager.export_to_mp4_with_audio(
-                    payload.frames,
-                    payload.audio,
-                    payload.sampling_rate,
-                    fps=payload.fps,
-                    pixel_format=getattr(payload, "pixel_format", "rgb24"),
-                )
-            else:
-                mp4_path = video_manager.export_to_mp4(payload)
+            mp4_path = video_manager.export_to_mp4(job.frames)
             _log.info(
                 f"Encoder thread: encoded mp4 for task {job.task_id} at {mp4_path}"
             )

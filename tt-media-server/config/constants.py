@@ -33,7 +33,6 @@ class SupportedModels(Enum):
     WAN_2_2_I2V_LORA = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
     WAN_2_2_I2V_LIGHTNING = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
     LTX_2_3_DISTILLED = "Lightricks/LTX-2.3:ltx-2.3-22b-distilled-1.1.safetensors"
-    MINIMAX_H3 = "MiniMaxAI/MiniMax-H3"
     MINIMAX_H3_FL2VA = "MiniMaxAI/MiniMax-H3"
     MINIMAX_H3_REF2VA = "MiniMaxAI/MiniMax-H3"
     MINIMAX_H3_FASTH3 = "MiniMaxAI/MiniMax-H3"
@@ -93,7 +92,6 @@ class ModelNames(Enum):
     WAN_2_2_I2V_LORA = "Wan2.2-I2V-LoRA"
     WAN_2_2_I2V_LIGHTNING = "Wan2.2-I2V-Lightning"
     LTX_2_3_DISTILLED = "LTX-2.3-distilled"
-    MINIMAX_H3 = "MiniMax-H3"
     MINIMAX_H3_FL2VA = "MiniMax-H3-FL2VA"
     MINIMAX_H3_REF2VA = "MiniMax-H3-Ref2VA"
     MINIMAX_H3_FASTH3 = "MiniMax-H3-FastH3"
@@ -155,7 +153,6 @@ class ModelRunners(Enum):
     TT_WAN_2_2_I2V_LORA = "tt-wan2.2-i2v-lora"
     TT_WAN_2_2_I2V_LIGHTNING = "tt-wan2.2-i2v-lightning"
     TT_LTX_2_3_DISTILLED = "tt-ltx-2.3-distilled"
-    TT_MINIMAX_H3_T2VA = "tt-minimax-h3-t2va"
     TT_MINIMAX_H3_FL2VA = "tt-minimax-h3-fl2va"
     TT_MINIMAX_H3_REF2VA = "tt-minimax-h3-ref2va"
     TT_MINIMAX_H3_FASTH3 = "tt-minimax-h3-fasth3"
@@ -214,6 +211,11 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_FLUX_2_KLEIN_4B,
         ModelRunners.TT_IDEOGRAM_4,
         ModelRunners.TT_LTX_2_3_DISTILLED,
+        ModelRunners.TT_MINIMAX_H3_FL2VA,
+        ModelRunners.TT_MINIMAX_H3_REF2VA,
+        ModelRunners.TT_MINIMAX_H3_FASTH3,
+        ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V,
+        ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V,
     },
     ModelServices.IMAGE: {
         ModelRunners.TT_SDXL_EDIT,
@@ -270,12 +272,6 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_WAN_2_2_I2V_DISTILL,
         ModelRunners.TT_WAN_2_2_I2V_LORA,
         ModelRunners.TT_WAN_2_2_I2V_LIGHTNING,
-        ModelRunners.TT_MINIMAX_H3_T2VA,
-        ModelRunners.TT_MINIMAX_H3_FL2VA,
-        ModelRunners.TT_MINIMAX_H3_REF2VA,
-        ModelRunners.TT_MINIMAX_H3_FASTH3,
-        ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V,
-        ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V,
         ModelRunners.SP_RUNNER,
     },
     ModelServices.TRAINING: {
@@ -312,39 +308,17 @@ I2V_MODEL_NAMES = frozenset(
     }
 )
 
-# MiniMax-H3 ref2va-only deployments: text-only and I2V endpoints must not
-# reach a worker that loaded ``transformer_ref/``.
-REF2VA_MODEL_RUNNERS = frozenset(
-    {ModelRunners.TT_MINIMAX_H3_REF2VA, ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V}
-)
-REF2VA_MODEL_NAMES = frozenset(
-    {ModelNames.MINIMAX_H3_REF2VA, ModelNames.MINIMAX_H3_REF2VA_LIGHTX2V}
-)
-# The MiniMax-H3 tasks that are known NOT to serve Ref2VA. An SP frontend loads
-# no weights, so MODEL is its only signal about the peer's task; only these
-# names prove the peer would drop a ``references`` payload. Any other value —
-# a Wan model, an unset MODEL, an unrecognised string — says nothing, and the
-# frontend must stay permissive rather than refuse a working deployment.
-NON_REF2VA_H3_MODEL_NAMES = frozenset(
-    {
-        ModelNames.MINIMAX_H3,
-        ModelNames.MINIMAX_H3_FL2VA,
-        ModelNames.MINIMAX_H3_FASTH3,
-        ModelNames.MINIMAX_H3_FL2VA_LIGHTX2V,
-    }
-)
-
 # Client-facing video API bounds
 MIN_VIDEO_INFERENCE_STEPS = 4
 MAX_VIDEO_INFERENCE_STEPS = 50
 DEFAULT_VIDEO_INFERENCE_STEPS = 20
 
 # Pipelines that ignore the client's num_inference_steps. Keep these as the
-# values passed into the runner (dit_runners Distill / Lightning / AniSora /
-# FastH3 / LightX2V).
+# values passed into the runner (dit_runners Distill / Lightning / AniSora).
 WAN22_DISTILL_NUM_STEPS = 4
 WAN22_LIGHTNING_NUM_STEPS = 4
 WAN22_ANISORA_NUM_STEPS = 8
+# The steps of the distilled MiniMax-H3 runners.
 MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS = 4
 # The lightx2v H3 Turbo adapters are distilled for 4 forwards. The H3 pipeline
 # counts sigma grid points, which is one more than the forward count.
@@ -354,17 +328,11 @@ VIDEO_FORCED_INFERENCE_STEPS_BY_RUNNER = {
     ModelRunners.TT_WAN_2_2_I2V_DISTILL: WAN22_DISTILL_NUM_STEPS,
     ModelRunners.TT_WAN_2_2_I2V_LIGHTNING: WAN22_LIGHTNING_NUM_STEPS,
     ModelRunners.TT_WAN_2_2_I2V_ANISORA: WAN22_ANISORA_NUM_STEPS,
-    ModelRunners.TT_MINIMAX_H3_FASTH3: MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS,
-    ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V: MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS,
-    ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V: MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS,
 }
 VIDEO_FORCED_INFERENCE_STEPS_BY_MODEL = {
     ModelNames.WAN_2_2_I2V_DISTILL: WAN22_DISTILL_NUM_STEPS,
     ModelNames.WAN_2_2_I2V_LIGHTNING: WAN22_LIGHTNING_NUM_STEPS,
     ModelNames.WAN_2_2_I2V_ANISORA: WAN22_ANISORA_NUM_STEPS,
-    ModelNames.MINIMAX_H3_FASTH3: MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS,
-    ModelNames.MINIMAX_H3_FL2VA_LIGHTX2V: MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS,
-    ModelNames.MINIMAX_H3_REF2VA_LIGHTX2V: MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS,
 }
 
 
@@ -375,7 +343,7 @@ def video_executed_inference_steps(
 ) -> Optional[int]:
     """Return the denoise steps the pipeline actually runs.
 
-    Distill, Lightning, AniSora, FastH3, and LightX2V ignore ``num_inference_steps``;
+    Distill, Lightning, and AniSora ignore ``num_inference_steps``;
     SP_RUNNER serving those weights is identified by ``MODEL``, not by the
     runner name.
     """
@@ -429,7 +397,6 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
         ModelNames.WAN_2_2_I2V_LIGHTNING,
         ModelNames.MOCHI_1,
     },
-    ModelRunners.TT_MINIMAX_H3_T2VA: {ModelNames.MINIMAX_H3},
     ModelRunners.TT_MINIMAX_H3_FL2VA: {ModelNames.MINIMAX_H3_FL2VA},
     ModelRunners.TT_MINIMAX_H3_REF2VA: {ModelNames.MINIMAX_H3_REF2VA},
     ModelRunners.TT_MINIMAX_H3_FASTH3: {ModelNames.MINIMAX_H3_FASTH3},
@@ -1190,14 +1157,6 @@ ModelConfigs = {
         "request_processing_timeout_seconds": 5000,
     },
     # One device-id group -> one worker -> requests serialise on the mesh.
-    (ModelRunners.TT_MINIMAX_H3_T2VA, DeviceTypes.GALAXY): {
-        "device_mesh_shape": (4, 8),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
-        "max_batch_size": 1,
-        "download_weights_from_service": False,
-        "request_processing_timeout_seconds": 5000,
-    },
     (ModelRunners.TT_MINIMAX_H3_FL2VA, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
@@ -1374,14 +1333,6 @@ ModelConfigs = {
     },
     # Galaxy quad: the 4x8 Galaxy configs above with the full (4, 32) mesh. One
     # device-id group -> one worker on rank 0; tt-run assigns each rank's chips.
-    (ModelRunners.TT_MINIMAX_H3_T2VA, DeviceTypes.GALAXY_QUAD): {
-        "device_mesh_shape": (4, 32),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
-        "max_batch_size": 1,
-        "download_weights_from_service": False,
-        "request_processing_timeout_seconds": 5000,
-    },
     (ModelRunners.TT_MINIMAX_H3_FL2VA, DeviceTypes.GALAXY_QUAD): {
         "device_mesh_shape": (4, 32),
         "is_galaxy": False,

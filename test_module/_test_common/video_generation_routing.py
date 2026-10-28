@@ -28,17 +28,27 @@ GENERATIONS_API_JOBS_ENDPOINT = "v1/jobs"
 # full repo ID match.
 GENERATIONS_API_SUBMIT_ENDPOINTS = {
     "Wan2.2-I2V-A14B-Diffusers": "v1/generations/wan-ai/wan2.2-i2v-a14b",
+    "MiniMax-H3-FL2VA": "v1/generations/minimaxai/minimax-h3",
+    "MiniMax-H3-FastH3": "v1/generations/minimaxai/minimax-h3-fasth3",
+    "MiniMax-H3-Ref2VA": "v1/generations/minimaxai/minimax-h3-ref2va",
+    "MiniMax-H3-FL2VA-LightX2V": "v1/generations/lightx2v/minimax-h3-turbo",
+    "MiniMax-H3-Ref2VA-LightX2V": "v1/generations/lightx2v/minimax-h3-turbo-ref2va",
 }
 FIXTURE_IMAGE_PATH = (
     Path("test_fixtures") / "datasets" / "imagenet_subset" / "imagenet_002_volcano.jpg"
 )
 DEFAULT_I2V_NEGATIVE_PROMPT = "blurry, low quality, distorted"
 DEFAULT_I2V_SEED = 42
+MINIMAX_H3_DURATION_SECONDS = 5
 
 
 def is_i2v_video_model(model_name: str) -> bool:
     """Return True when ``model_name`` is an image-to-video variant."""
     return "-I2V-" in model_name
+
+
+def is_minimax_h3_model(model_name: str) -> bool:
+    return model_name.split("/")[-1].startswith("MiniMax-H3")
 
 
 def uses_generations_api(model_name: str) -> bool:
@@ -79,6 +89,25 @@ def build_video_generation_payload(
 ) -> dict:
     """Build a T2V or I2V submit payload for ``model_name``. The generations
     API takes no step count: it runs the model's reference default."""
+    if is_minimax_h3_model(model_name):
+        payload = {
+            "prompt": prompt,
+            "duration": MINIMAX_H3_DURATION_SECONDS,
+            "seed": 0,
+        }
+        if "Ref2VA" in model_name:
+            # The Ref2VA adapter is 544p-trained; let the server pick the
+            # canvas for 16:9.
+            payload.update(
+                aspect_ratio="16:9", images=[fixture_image_data_uri(image_b64)]
+            )
+        else:
+            # 16:9; an explicit canvas keeps the clip shape independent of the
+            # keyframe's.
+            payload.update(width=1344, height=768)
+            if "FastH3" not in model_name:
+                payload["first_frame"] = fixture_image_data_uri(image_b64)
+        return payload
     if uses_generations_api(model_name):
         return {
             "prompt": prompt,

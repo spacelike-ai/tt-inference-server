@@ -1,0 +1,113 @@
+openapi: 3.1.0
+info:
+  title: MiniMax-H3 FastH3 generation API (tt-media-server)
+  version: 0.1.0
+  description: |
+    What a `minimaxai/minimax-h3-fasth3` deployment serves: its submit endpoint
+    and the common `/v1/jobs` API. Shared schemas, responses and auth live
+    in `common.yaml`, which also describes the API as a whole.
+security:
+  - Bearer: []
+paths:
+  /v1/generations/minimaxai/minimax-h3-fasth3:
+    post:
+      operationId: submitMiniMaxH3FastH3
+      tags: [MiniMax-H3 FastH3]
+      summary: Submit a MiniMax-H3 FastH3 text-to-video job
+      description: |
+        MiniMax-H3 with the FastH3 distilled adapter and sparse attention:
+        text to video with a soundtrack generated with it. 4 steps, fixed. No
+        keyframes; for those, `minimaxai/minimax-h3`.
+
+        **Elsewhere:** tt-media-server today `POST /v1/videos/generations`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MiniMaxH3FastH3Request"
+            example:
+              prompt: waves break on a rocky shore at dusk, gulls calling
+              duration: 5
+              seed: 1234
+      responses:
+        "202":
+          $ref: "../../common.yaml#/components/responses/Submitted"
+        "401":
+          $ref: "../../common.yaml#/components/responses/Unauthorized"
+        "404":
+          $ref: "../../common.yaml#/components/responses/NotServed"
+        "422":
+          $ref: "../../common.yaml#/components/responses/Invalid"
+        "429":
+          $ref: "../../common.yaml#/components/responses/QueueFull"
+        "503":
+          $ref: "../../common.yaml#/components/responses/Unavailable"
+  /v1/jobs:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs
+  /v1/jobs/{job_id}:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D
+  /v1/jobs/{job_id}/content/{index}:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D~1content~1%7Bindex%7D
+  /v1/jobs/{job_id}/cancel:
+    $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D~1cancel
+components:
+  schemas:
+    MiniMaxH3FastH3Request:
+      type: object
+      additionalProperties: false
+      required: [prompt]
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+          description: |
+            Describes the picture and the sound. At most 3008 tokens.
+
+            **Elsewhere:** tt-media-server today `prompt`.
+        aspect_ratio:
+          type: string
+          enum: ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"]
+          default: "16:9"
+          description: |
+            Output shape, unless `width` and `height` are set. The size
+            follows: the short side 768, the area at most 768 × 1344, each side
+            a multiple of 32 (`16:9` 1344×768, `21:9` 1536×672).
+
+            **Elsewhere:** tt-media-server today `aspect_ratio`.
+        width:
+          type: integer
+          minimum: 32
+          multipleOf: 32
+          description: |
+            With `height`, the output shape in place of `aspect_ratio`: a
+            multiple of 32, `width × height` at most 1,032,192, the ratio from
+            1:4 to 4:1. It is resized like `aspect_ratio`, so it sets the
+            shape, not the size: 832 × 480 gives 1344×768.
+
+            **Elsewhere:** tt-media-server today `width`.
+        height:
+          type: integer
+          minimum: 32
+          multipleOf: 32
+          description: |
+            See `width`.
+
+            **Elsewhere:** tt-media-server today `height`.
+        duration:
+          type: integer
+          minimum: 4
+          maximum: 15
+          default: 5
+          description: |
+            Seconds. Generated at 24 fps and rounded up to the frame count the
+            VAE takes (17n + 5), so 5 s is 124 frames; the output reports the
+            exact `duration`.
+
+            **Elsewhere:** tt-media-server today `duration`.
+        seed:
+          $ref: "../../common.yaml#/components/schemas/Seed"
+          description: |
+            Omitted = random. Each output reports the seed it was made with.
+
+            **Elsewhere:** tt-media-server today `seed`, defaulting to 0.
