@@ -150,14 +150,13 @@ def _resolved(request, width, height, images=None, seed=5, prompt=None):
     return request
 
 
-def test_wan_passes_both_frames_fitted_to_the_output(monkeypatch):
+def test_wan_passes_both_frames_as_they_are(monkeypatch):
     monkeypatch.setattr(
         runners, "ImagePrompt", lambda image, frame_pos: (image, frame_pos)
     )
     runner = _runner("TTWan22I2VA14BRunner")
-    # A wide first frame is center-cropped, not stretched.
-    first = Image.new("RGB", (2000, 720), "red")
-    first.paste((0, 0, 255), (0, 0, 360, 720))
+    # The pipeline crops and resizes them.
+    first = Image.new("RGB", (2000, 720))
     last = Image.new("RGB", (640, 360))
     request = _resolved(
         Wan22i2vA14bRequest(
@@ -173,10 +172,7 @@ def test_wan_passes_both_frames_fitted_to_the_output(monkeypatch):
     )
     assert runner.run([request]) == ["output"]
     (call,) = runner.pipeline.calls
-    (fitted_first, first_pos), (fitted_last, last_pos) = call.pop("image_prompt")
-    assert (first_pos, last_pos) == (0, 80)
-    assert fitted_first.size == fitted_last.size == (1280, 720)
-    assert fitted_first.getpixel((0, 0)) == (255, 0, 0)
+    assert call.pop("image_prompt") == [(first, 0), (last, 80)]
     assert call == {
         "prompts": ["a boat"],
         "negative_prompts": [WAN_NEGATIVE_PROMPT],

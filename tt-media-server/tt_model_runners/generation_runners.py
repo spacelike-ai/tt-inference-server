@@ -49,7 +49,7 @@ from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3 import (
     resolve_mesh_preset,
 )
 from models.tt_dit.pipelines.wan.pipeline_wan_i2v import ImagePrompt, WanPipelineI2V
-from PIL import Image, ImageOps
+from PIL import Image
 from telemetry.image_metrics import ImageStageRecorder, sampler_name
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.dit_runners import (
@@ -150,18 +150,15 @@ class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):
     @_inference_timer
     def run(self, requests: list[Wan22i2vA14bRequest]):
         request = requests[0]
-        size = (request._width, request._height)
-        # Fitted to the output size: resized and center-cropped.
+        # The pipeline center-crops each image to the output's aspect ratio and
+        # resizes it.
         image_prompt = [
-            ImagePrompt(
-                image=ImageOps.fit(request._images["first_frame"][0], size),
-                frame_pos=0,
-            )
+            ImagePrompt(image=request._images["first_frame"][0], frame_pos=0)
         ]
         if request.last_frame is not None:
             image_prompt.append(
                 ImagePrompt(
-                    image=ImageOps.fit(request._images["last_frame"][0], size),
+                    image=request._images["last_frame"][0],
                     frame_pos=request.frames - 1,
                 )
             )
