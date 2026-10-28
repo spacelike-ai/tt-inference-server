@@ -187,7 +187,6 @@ def test_wan_passes_both_frames_fitted_to_the_output(monkeypatch):
         "seed": 5,
         "height": 720,
         "width": 1280,
-        "num_frames": 81,
         "traced": True,
         "on_event": None,
     }

@@ -190,7 +190,6 @@ class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):
                 seed=request._seed,
                 height=request._height,
                 width=request._width,
-                num_frames=request.frames,
                 traced=True,
                 on_event=recorder,
             )
