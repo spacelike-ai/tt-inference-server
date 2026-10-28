@@ -107,22 +107,6 @@ class TestIsI2VOnlyDeployment:
         with patch.dict(os.environ, {"MODEL": "Wan2.2-I2V-A14B-Prodia"}):
             assert _is_i2v_only_deployment() is False
 
-    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
-    def test_proxy_runner_falls_back_to_model_env(self):
-        """SP_RUNNER serves either T2V or I2V, so MODEL disambiguates it."""
-        with patch.dict(os.environ, {"MODEL": "Wan2.2-I2V-A14B-Prodia"}):
-            assert _is_i2v_only_deployment() is True
-
-    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
-    def test_proxy_runner_with_t2v_model_is_not_i2v(self):
-        with patch.dict(os.environ, {"MODEL": "Wan2.2-T2V-A14B-Diffusers"}):
-            assert _is_i2v_only_deployment() is False
-
-    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
-    def test_unknown_model_env_is_not_i2v(self):
-        with patch.dict(os.environ, {"MODEL": "not-a-model"}):
-            assert _is_i2v_only_deployment() is False
-
 
 class TestSubmitGenerateVideoRequest:
     """Tests for POST /generations endpoint"""
@@ -796,7 +780,7 @@ class TestVideoRequestShape:
 
     def test_leaves_shape_fields_unresolved(self):
         """Wan resolves its shape from settings/mesh, so the request must not
-        pin one. sp_runner's `or DEFAULT` turns these Nones into its defaults."""
+        pin one."""
         r = VideoGenerateRequest(prompt="p")
         assert r.height is None and r.width is None
         assert r.num_frames is None and r.fps is None

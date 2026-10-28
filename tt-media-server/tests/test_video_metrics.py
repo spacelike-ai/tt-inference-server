@@ -565,23 +565,6 @@ class TestExecutedVsRequestedSteps:
             == WAN22_ANISORA_NUM_STEPS
         )
 
-    def test_helper_sp_runner_uses_model_name(self):
-        from config.constants import (
-            ModelNames,
-            ModelRunners,
-            WAN22_LIGHTNING_NUM_STEPS,
-            video_executed_inference_steps,
-        )
-
-        assert (
-            video_executed_inference_steps(
-                20,
-                ModelRunners.SP_RUNNER.value,
-                ModelNames.WAN_2_2_I2V_LIGHTNING.value,
-            )
-            == WAN22_LIGHTNING_NUM_STEPS
-        )
-
     def test_recorder_counts_distill_executed_steps(self):
         from config.constants import ModelRunners, WAN22_DISTILL_NUM_STEPS
 
@@ -692,7 +675,7 @@ class TestClassifyRequest:
 
 
 class TestProbeVideo:
-    """probe_video is the only source of shape truth on the SP_RUNNER path."""
+    """probe_video reads the shape back off a produced mp4."""
 
     def test_reads_shape_and_length(self, tmp_path):
         path = write_mp4(tmp_path / "clip.mp4", num_frames=8, width=64, height=32)

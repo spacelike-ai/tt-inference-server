@@ -9,10 +9,8 @@ import time as _time
 from typing import Annotated, Optional
 
 from config.constants import (
-    I2V_MODEL_NAMES,
     I2V_MODEL_RUNNERS,
     JobTypes,
-    ModelNames,
     ModelRunners,
 )
 from config.settings import settings
@@ -176,24 +174,7 @@ def _is_i2v_only_deployment() -> bool:
     except ValueError:
         return False
 
-    if runner in I2V_MODEL_RUNNERS:
-        return True
-
-    # Every video runner except SP_RUNNER maps 1:1 to its model, so the check
-    # above is already conclusive for them and MODEL must not override it —
-    # a stale env var should never make a T2V deployment reject text prompts.
-    # SP_RUNNER proxies to a multihost peer and serves either T2V or I2V, so it
-    # is the one case where MODEL carries information the runner does not.
-    if runner is not ModelRunners.SP_RUNNER:
-        return False
-
-    model_env = os.getenv("MODEL")
-    if not model_env:
-        return False
-    try:
-        return ModelNames(model_env) in I2V_MODEL_NAMES
-    except ValueError:
-        return False
+    return runner in I2V_MODEL_RUNNERS
 
 
 def reject_text_to_video_on_i2v_deployment() -> None:

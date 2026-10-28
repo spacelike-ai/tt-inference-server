@@ -102,7 +102,6 @@ dit_runner_log_map = {
     ModelRunners.TT_QWEN_IMAGE_EDIT_2511.value: "Qwen-Image-Edit-2511",
     ModelRunners.TT_FLUX_2_KLEIN_4B.value: "FLUX.2-klein-4B",
     ModelRunners.TT_IDEOGRAM_4.value: "Ideogram-4",
-    ModelRunners.SP_RUNNER.value: "SP-Runner",
 }
 
 DIT_WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS = 6000
