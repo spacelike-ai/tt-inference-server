@@ -43,7 +43,6 @@ from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.minimax_h3_request import H3_SHORT_EDGE, _MiniMaxH3Request
 from domain.qwen_image_edit_2511_request import QwenImageEdit2511Request
 from domain.wan22_i2v_a14b_request import Wan22i2vA14bRequest
-from huggingface_hub import snapshot_download
 from models.common.utility_functions import is_blackhole
 from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3 import (
     MiniMaxH3Pipeline,
@@ -92,14 +91,6 @@ def _warmup_request(
     request._images = images or {}
     request._prompt = _WARMUP_PROMPT
     return request
-
-
-def _weights_dir(model_weights_path: str) -> str:
-    # MODEL_WEIGHTS_DIR is a local directory; otherwise the path is a Hugging
-    # Face repo ID.
-    if os.path.isdir(model_weights_path):
-        return model_weights_path
-    return snapshot_download(model_weights_path)
 
 
 class _GenerationRunner(TTDiTRunner):
@@ -290,7 +281,7 @@ class TTIdeogram4Runner(_GenerationRunner):
         try:
             return Ideogram4Pipeline.create_pipeline(
                 mesh_device=self.ttnn_device,
-                weights_dir=_weights_dir(self.settings.model_weights_path),
+                weights_dir=self.settings.model_weights_path,
             )
         except Exception as e:
             log_exception_chain(
@@ -368,9 +359,6 @@ class TTLtx23DistilledRunner(_GenerationRunner):
                 e,
             )
             raise
-
-    def load_weights(self):
-        return False
 
     def get_pipeline_device_params(self):
         # The Wan2.2 ring and fabric defaults, plus L1_SMALL for the audio
@@ -516,9 +504,6 @@ class _MiniMaxH3Runner(_GenerationRunner):
                 self.logger, self.device_id, "MiniMax-H3 pipeline creation failed", e
             )
             raise
-
-    def load_weights(self):
-        return False
 
     def get_pipeline_device_params(self):
         return _minimax_h3_device_params(self.settings.device_mesh_shape)

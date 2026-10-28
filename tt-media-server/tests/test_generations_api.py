@@ -1121,3 +1121,20 @@ async def test_a_too_large_clip_is_413_naming_its_kind(generations_app, monkeypa
     )
     assert response.status_code == 413
     assert response.json()["detail"] == "A video input is over 10 bytes"
+
+
+def test_the_service_downloads_no_weights(monkeypatch):
+    # The pipelines load their own weights.
+    from model_services import base_service
+    from model_services.generation_service import GenerationService
+
+    downloads = []
+    monkeypatch.setattr(base_service, "get_scheduler", lambda: None)
+    monkeypatch.setattr(base_service.settings, "download_weights_from_service", True)
+    monkeypatch.setattr(
+        base_service,
+        "HuggingFaceUtils",
+        lambda: SimpleNamespace(download_weights=lambda: downloads.append(1)),
+    )
+    base_service.BaseService.__init__(object.__new__(GenerationService))
+    assert downloads == []

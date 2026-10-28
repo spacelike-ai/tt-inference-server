@@ -115,6 +115,9 @@ def read_manifest(result_path: str) -> list[dict]:
 # Serves the generations API: one job per submitted request, producing an image
 # or a video, written to the job's own directory.
 class GenerationService(BaseJobService):
+    # The pipelines load their own weights.
+    DOWNLOADS_WEIGHTS = False
+
     async def submit(self, request: GenerationRequest) -> dict:
         """Validate what the request schema can't, fetch its media, and queue it.
 

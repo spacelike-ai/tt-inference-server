@@ -311,12 +311,19 @@ def test_qwen_pipeline_warms_itself_up():
     assert _runner("TTQwenImageEdit2511Runner").warmup_requests() == []
 
 
-def test_ideogram_weights_are_a_local_directory_or_a_repo(monkeypatch, tmp_path):
-    monkeypatch.setattr(runners, "snapshot_download", lambda repo: f"/hub/{repo}")
-    assert runners._weights_dir(str(tmp_path)) == str(tmp_path)
-    assert (
-        runners._weights_dir("ideogram-ai/ideogram-4") == "/hub/ideogram-ai/ideogram-4"
+def test_ideogram_pipeline_gets_the_weights_path_as_is(monkeypatch):
+    # The pipeline resolves a repo id itself.
+    pipeline = ModuleType("pipeline_ideogram4")
+    pipeline.Ideogram4Pipeline = Mock()
+    monkeypatch.setitem(
+        sys.modules, "models.tt_dit.pipelines.ideogram4.pipeline_ideogram4", pipeline
     )
+    runner = _runner("TTIdeogram4Runner")
+    runner.settings.model_weights_path = "ideogram-ai/ideogram-4-fp8"
+    runner.ttnn_device = Mock()
+    runner.create_pipeline()
+    kwargs = pipeline.Ideogram4Pipeline.create_pipeline.call_args.kwargs
+    assert kwargs["weights_dir"] == "ideogram-ai/ideogram-4-fp8"
 
 
 class _H3Pipeline:
