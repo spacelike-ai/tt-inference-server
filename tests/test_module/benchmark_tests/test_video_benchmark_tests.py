@@ -322,11 +322,6 @@ def test_minimax_h3_ref2va_benchmark_loads_the_reference(monkeypatch):
             {"prompt", "duration", "seed", "first_frame"},
         ),
         (
-            "MiniMax-H3-FastH3",
-            "v1/generations/tenstorrent/minimax-h3-fl2va-fasth3",
-            {"prompt", "duration", "seed"},
-        ),
-        (
             "MiniMax-H3-Ref2VA",
             "v1/generations/minimaxai/minimax-h3-ref2va",
             {"prompt", "duration", "seed", "aspect_ratio", "images"},

@@ -35,7 +35,6 @@ class SupportedModels(Enum):
     LTX_2_3_DISTILLED = "Lightricks/LTX-2.3:ltx-2.3-22b-distilled-1.1.safetensors"
     MINIMAX_H3_FL2VA = "MiniMaxAI/MiniMax-H3"
     MINIMAX_H3_REF2VA = "MiniMaxAI/MiniMax-H3"
-    MINIMAX_H3_FASTH3 = "MiniMaxAI/MiniMax-H3"
     MINIMAX_H3_FL2VA_LIGHTX2V = "MiniMaxAI/MiniMax-H3"
     MINIMAX_H3_REF2VA_LIGHTX2V = "MiniMaxAI/MiniMax-H3"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
@@ -94,7 +93,6 @@ class ModelNames(Enum):
     LTX_2_3_DISTILLED = "LTX-2.3-distilled"
     MINIMAX_H3_FL2VA = "MiniMax-H3-FL2VA"
     MINIMAX_H3_REF2VA = "MiniMax-H3-Ref2VA"
-    MINIMAX_H3_FASTH3 = "MiniMax-H3-FastH3"
     MINIMAX_H3_FL2VA_LIGHTX2V = "MiniMax-H3-FL2VA-LightX2V"
     MINIMAX_H3_REF2VA_LIGHTX2V = "MiniMax-H3-Ref2VA-LightX2V"
     DISTIL_WHISPER_LARGE_V3 = "distil-large-v3"
@@ -155,7 +153,6 @@ class ModelRunners(Enum):
     TT_LTX_2_3_DISTILLED = "tt-ltx-2.3-distilled"
     TT_MINIMAX_H3_FL2VA = "tt-minimax-h3-fl2va"
     TT_MINIMAX_H3_REF2VA = "tt-minimax-h3-ref2va"
-    TT_MINIMAX_H3_FASTH3 = "tt-minimax-h3-fasth3"
     TT_MINIMAX_H3_FL2VA_LIGHTX2V = "tt-minimax-h3-fl2va-lightx2v"
     TT_MINIMAX_H3_REF2VA_LIGHTX2V = "tt-minimax-h3-ref2va-lightx2v"
     TT_WHISPER = "tt-whisper"
@@ -212,7 +209,6 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_LTX_2_3_DISTILLED,
         ModelRunners.TT_MINIMAX_H3_FL2VA,
         ModelRunners.TT_MINIMAX_H3_REF2VA,
-        ModelRunners.TT_MINIMAX_H3_FASTH3,
         ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V,
         ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V,
     },
@@ -305,8 +301,6 @@ DEFAULT_VIDEO_INFERENCE_STEPS = 20
 WAN22_DISTILL_NUM_STEPS = 4
 WAN22_LIGHTNING_NUM_STEPS = 4
 WAN22_ANISORA_NUM_STEPS = 8
-# The steps of the distilled MiniMax-H3 runners.
-MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS = 4
 # The lightx2v H3 Turbo adapters are distilled for 4 forwards. The H3 pipeline
 # counts sigma grid points, which is one more than the forward count.
 MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS = 5
@@ -364,7 +358,6 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_LTX_2_3_DISTILLED: {ModelNames.LTX_2_3_DISTILLED},
     ModelRunners.TT_MINIMAX_H3_FL2VA: {ModelNames.MINIMAX_H3_FL2VA},
     ModelRunners.TT_MINIMAX_H3_REF2VA: {ModelNames.MINIMAX_H3_REF2VA},
-    ModelRunners.TT_MINIMAX_H3_FASTH3: {ModelNames.MINIMAX_H3_FASTH3},
     ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V: {ModelNames.MINIMAX_H3_FL2VA_LIGHTX2V},
     ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V: {ModelNames.MINIMAX_H3_REF2VA_LIGHTX2V},
     ModelRunners.TT_WHISPER: {
@@ -1138,14 +1131,6 @@ ModelConfigs = {
         "download_weights_from_service": False,
         "request_processing_timeout_seconds": 5000,
     },
-    (ModelRunners.TT_MINIMAX_H3_FASTH3, DeviceTypes.GALAXY): {
-        "device_mesh_shape": (4, 8),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
-        "max_batch_size": 1,
-        "download_weights_from_service": False,
-        "request_processing_timeout_seconds": 5000,
-    },
     (ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
@@ -1307,14 +1292,6 @@ ModelConfigs = {
         "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.TT_MINIMAX_H3_REF2VA, DeviceTypes.GALAXY_QUAD): {
-        "device_mesh_shape": (4, 32),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
-        "max_batch_size": 1,
-        "download_weights_from_service": False,
-        "request_processing_timeout_seconds": 5000,
-    },
-    (ModelRunners.TT_MINIMAX_H3_FASTH3, DeviceTypes.GALAXY_QUAD): {
         "device_mesh_shape": (4, 32),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,

@@ -8,7 +8,6 @@ from domain.generation_request import GenerationRequest
 from domain.ideogram4_request import Ideogram4Request
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.minimax_h3_request import (
-    MiniMaxH3FastH3Request,
     MiniMaxH3FL2VALightX2VRequest,
     MiniMaxH3FL2VARequest,
     MiniMaxH3Ref2VALightX2VRequest,
@@ -25,7 +24,6 @@ GENERATION_REQUESTS: dict[str, type[GenerationRequest]] = {
     ModelRunners.TT_IDEOGRAM_4.value: Ideogram4Request,
     ModelRunners.TT_LTX_2_3_DISTILLED.value: Ltx23DistilledRequest,
     ModelRunners.TT_MINIMAX_H3_FL2VA.value: MiniMaxH3FL2VARequest,
-    ModelRunners.TT_MINIMAX_H3_FASTH3.value: MiniMaxH3FastH3Request,
     ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V.value: MiniMaxH3FL2VALightX2VRequest,
     ModelRunners.TT_MINIMAX_H3_REF2VA.value: MiniMaxH3Ref2VARequest,
     ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V.value: MiniMaxH3Ref2VALightX2VRequest,

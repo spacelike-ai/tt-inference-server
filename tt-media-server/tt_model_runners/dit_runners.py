@@ -94,7 +94,6 @@ dit_runner_log_map = {
     ModelRunners.TT_LTX_2_3_DISTILLED.value: "LTX-2.3-distilled",
     ModelRunners.TT_MINIMAX_H3_FL2VA.value: "MiniMaxH3-FL2VA",
     ModelRunners.TT_MINIMAX_H3_REF2VA.value: "MiniMaxH3-Ref2VA",
-    ModelRunners.TT_MINIMAX_H3_FASTH3.value: "MiniMaxH3-FastH3",
     ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V.value: "MiniMaxH3-FL2VA-LightX2V",
     ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V.value: "MiniMaxH3-Ref2VA-LightX2V",
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",

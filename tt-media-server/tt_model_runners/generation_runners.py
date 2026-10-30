@@ -29,7 +29,6 @@ from config.constants import (
     LTX_HEIGHT,
     LTX_NUM_FRAMES,
     LTX_WIDTH,
-    MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS,
     MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS,
     WAN22_NUM_FRAMES,
     Resolution,
@@ -697,23 +696,6 @@ class _MiniMaxH3TurboMixin:
 
 class TTMiniMaxH3Runner(_MiniMaxH3KeyframesRunner):
     """MiniMax-H3, from text or keyframes (FL2VA)."""
-
-
-class TTMiniMaxH3FastH3Runner(_MiniMaxH3Runner):
-    """MiniMax-H3 FastH3: text only, with a distilled LoRA adapter and sparse
-    attention, fixed to 4 steps."""
-
-    num_inference_steps = MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS
-
-    def _create_pipeline_kwargs(self) -> dict:
-        from models.tt_dit.models.transformers.minimax_h3.vsa_stages_minimax_h3 import (
-            MiniMaxH3VSAConfig,
-        )
-
-        return {
-            "lora_path": os.environ.get("MINIMAX_H3_LORA_PATH"),
-            "vsa_config": MiniMaxH3VSAConfig(sparsity=0.9),
-        }
 
 
 class TTMiniMaxH3TurboRunner(_MiniMaxH3TurboMixin, TTMiniMaxH3Runner):

@@ -27,7 +27,6 @@ from domain.generation_request import MEDIA_MAX_BYTES
 from domain.ideogram4_request import Ideogram4Request
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.minimax_h3_request import (
-    MiniMaxH3FastH3Request,
     MiniMaxH3FL2VALightX2VRequest,
     MiniMaxH3FL2VARequest,
     MiniMaxH3Ref2VALightX2VRequest,
@@ -89,7 +88,6 @@ def _resolved(schema: dict, defs: dict) -> dict:
         Ltx23DistilledRequest,
         MiniMaxH3FL2VARequest,
         MiniMaxH3FL2VALightX2VRequest,
-        MiniMaxH3FastH3Request,
         MiniMaxH3Ref2VARequest,
         MiniMaxH3Ref2VALightX2VRequest,
     ],
@@ -942,11 +940,6 @@ def test_h3_ratio_spellings_of_the_earlier_api(ratio):
 def test_h3_prompt_must_not_be_blank(prompt):
     with pytest.raises(ValidationError):
         MiniMaxH3FL2VARequest(prompt=prompt)
-
-
-def test_fasth3_takes_no_keyframes():
-    with pytest.raises(ValidationError, match="extra"):
-        MiniMaxH3FastH3Request(prompt="x", first_frame="https://x/a.png")
 
 
 @pytest.mark.parametrize(

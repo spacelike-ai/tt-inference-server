@@ -208,7 +208,6 @@ The setup for other supported DiT models is very similar to [Standard SD-3.5 Set
 | Wan2.2-I2V-A14B-Diffusers | galaxy, t3k, p150x4, p150x8, p300x2 |
 | MiniMax-H3-FL2VA | galaxy, galaxy_quad |
 | MiniMax-H3-Ref2VA | galaxy, galaxy_quad |
-| MiniMax-H3-FastH3 | galaxy, galaxy_quad |
 | MiniMax-H3-FL2VA-LightX2V | galaxy, galaxy_quad |
 | MiniMax-H3-Ref2VA-LightX2V | galaxy, galaxy_quad |
 

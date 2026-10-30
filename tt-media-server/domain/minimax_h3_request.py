@@ -2,8 +2,8 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""The MiniMax-H3 requests: text, or text with first/last keyframes (FL2VA), or
-text with reference images, videos and audio (Ref2VA), to a video with its
+"""The MiniMax-H3 requests: text, optionally with first/last keyframes (FL2VA),
+or text with reference images, videos and audio (Ref2VA), to a video with its
 soundtrack. A deployment serves FL2VA or Ref2VA, which load different
 transformers, so each is its own model.
 
@@ -224,10 +224,6 @@ class MiniMaxH3FL2VARequest(_MiniMaxH3KeyframesRequest):
 
 class MiniMaxH3FL2VALightX2VRequest(_MiniMaxH3KeyframesRequest):
     MODEL_ID = "tenstorrent/minimax-h3-fl2va-lightx2v"
-
-
-class MiniMaxH3FastH3Request(_MiniMaxH3Request):
-    MODEL_ID = "tenstorrent/minimax-h3-fl2va-fasth3"
 
 
 class _MiniMaxH3ReferencesRequest(_MiniMaxH3Request):

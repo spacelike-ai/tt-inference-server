@@ -20,7 +20,6 @@ from domain.flux2_klein_4b_request import Flux2klein4bRequest
 from domain.ideogram4_request import Ideogram4Request
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.minimax_h3_request import (
-    MiniMaxH3FastH3Request,
     MiniMaxH3FL2VARequest,
     MiniMaxH3Ref2VARequest,
 )
@@ -501,18 +500,10 @@ def test_h3_undecodable_input_fails_only_the_request(monkeypatch, h3_exports):
     assert runner.pipeline.calls == []
 
 
-def test_h3_fasth3_runs_four_steps(h3_exports):
-    runner = _h3_runner("TTMiniMaxH3FastH3Runner")
-    runner.run([_resolved(MiniMaxH3FastH3Request(prompt="waves"), 1344, 768)])
-    (call,) = runner.pipeline.calls
-    assert call["num_inference_steps"] == 4
-
-
 @pytest.mark.parametrize(
     "class_name, inputs",
     [
         ("TTMiniMaxH3Runner", {}),
-        ("TTMiniMaxH3FastH3Runner", {}),
         ("TTMiniMaxH3Ref2VARunner", {"images": [(768, 768)]}),
     ],
 )
