@@ -68,7 +68,6 @@ def _add_submit_route(request_model) -> None:
         f"/v1/generations/{request_model.MODEL_ID}",
         status_code=202,
         response_model=Job,
-        response_model_exclude_none=True,
         tags=[request_model.MODEL_ID],
         summary=f"Submit a {request_model.MODEL_ID} job",
     )
@@ -88,7 +87,6 @@ if settings.model_runner in GENERATION_REQUESTS:
 @router.get(
     "/v1/jobs",
     response_model=list[Job],
-    response_model_exclude_none=True,
     tags=["Jobs"],
 )
 def list_jobs(service: GenerationService = Depends(service_resolver)) -> list[Job]:
@@ -103,7 +101,6 @@ def list_jobs(service: GenerationService = Depends(service_resolver)) -> list[Jo
 @router.get(
     "/v1/jobs/{job_id}",
     response_model=Job,
-    response_model_exclude_none=True,
     tags=["Jobs"],
 )
 def get_job(job_id: str, service: GenerationService = Depends(service_resolver)) -> Job:
@@ -160,7 +157,6 @@ def get_job_content(
 @router.post(
     "/v1/jobs/{job_id}/cancel",
     response_model=Job,
-    response_model_exclude_none=True,
     tags=["Jobs"],
 )
 def cancel_job(

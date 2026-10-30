@@ -1,15 +1,15 @@
 openapi: 3.1.0
 info:
-  title: MiniMax-H3 FastH3 generation API (tt-media-server)
+  title: MiniMax-H3 FL2VA FastH3 generation API (tt-media-server)
   version: 0.1.0
   description: |
-    What a `minimaxai/minimax-h3-fasth3` deployment serves: its submit endpoint
-    and the common `/v1/jobs` API. Shared schemas, responses and auth live
-    in `common.yaml`, which also describes the API as a whole.
+    What a `tenstorrent/minimax-h3-fl2va-fasth3` deployment serves: its submit
+    endpoint and the common `/v1/jobs` API. Shared schemas, responses and auth
+    live in `common.yaml`, which also describes the API as a whole.
 security:
   - Bearer: []
 paths:
-  /v1/generations/minimaxai/minimax-h3-fasth3:
+  /v1/generations/tenstorrent/minimax-h3-fl2va-fasth3:
     post:
       operationId: submitMiniMaxH3FastH3
       tags: [MiniMax-H3 FastH3]
@@ -17,9 +17,9 @@ paths:
       description: |
         MiniMax-H3 with the FastH3 distilled adapter and sparse attention:
         text to video with a soundtrack generated with it. 4 steps, fixed. No
-        keyframes; for those, `minimaxai/minimax-h3`.
+        keyframes; for those, `minimaxai/minimax-h3-fl2va`.
 
-        **Elsewhere:** tt-media-server today `POST /v1/videos/generations`.
+        **tt-media-server today:** `POST /v1/videos/generations`.
       requestBody:
         required: true
         content:
@@ -52,6 +52,9 @@ paths:
   /v1/jobs/{job_id}/cancel:
     $ref: ../../common.yaml#/paths/~1v1~1jobs~1%7Bjob_id%7D~1cancel
 components:
+  securitySchemes:
+    Bearer:
+      $ref: "../../common.yaml#/components/securitySchemes/Bearer"
   schemas:
     MiniMaxH3FastH3Request:
       type: object
@@ -61,53 +64,29 @@ components:
         prompt:
           type: string
           minLength: 1
-          description: |
-            Describes the picture and the sound. At most 3008 tokens.
-
-            **Elsewhere:** tt-media-server today `prompt`.
         aspect_ratio:
           type: string
           enum: ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"]
           default: "16:9"
           description: |
-            Output shape, unless `width` and `height` are set. The size
-            follows: the short side 768, the area at most 768 × 1344, each side
-            a multiple of 32 (`16:9` 1344×768, `21:9` 1536×672).
-
-            **Elsewhere:** tt-media-server today `aspect_ratio`.
-        width:
-          type: integer
-          minimum: 32
-          multipleOf: 32
+            Output shape. Each output reports its exact size.
+        size:
+          type: string
+          enum: [768p]
+          default: 768p
           description: |
-            With `height`, the output shape in place of `aspect_ratio`: a
-            multiple of 32, `width × height` at most 1,032,192, the ratio from
-            1:4 to 4:1. It is resized like `aspect_ratio`, so it sets the
-            shape, not the size: 832 × 480 gives 1344×768.
-
-            **Elsewhere:** tt-media-server today `width`.
-        height:
-          type: integer
-          minimum: 32
-          multipleOf: 32
-          description: |
-            See `width`.
-
-            **Elsewhere:** tt-media-server today `height`.
+            Size tier: a short edge of 768, the area capped at 768×1344, sides
+            multiples of 32 (`16:9` 1344×768, `21:9` 1536×672). Only `768p` for
+            now; kept so other tiers can be added without a schema change.
         duration:
           type: integer
           minimum: 4
           maximum: 15
           default: 5
           description: |
-            Seconds. Generated at 24 fps and rounded up to the frame count the
-            VAE takes (17n + 5), so 5 s is 124 frames; the output reports the
-            exact `duration`.
-
-            **Elsewhere:** tt-media-server today `duration`.
+            Seconds. The video runs at 24 fps and its length is rounded up to the
+            frame counts the model generates (17k + 5): 5 s gives 124 frames
+            (5.17 s). Each output reports its exact `duration` and
+            `num_frames`.
         seed:
           $ref: "../../common.yaml#/components/schemas/Seed"
-          description: |
-            Omitted = random. Each output reports the seed it was made with.
-
-            **Elsewhere:** tt-media-server today `seed`, defaulting to 0.

@@ -217,12 +217,12 @@ def test_minimax_h3_fl2va_generation_sends_only_fields_h3_accepts(monkeypatch):
 
     assert ok is True
     assert job_id == "job-h3"
-    assert captured["url"].endswith("v1/generations/lightx2v/minimax-h3-turbo")
+    assert captured["url"].endswith(
+        "v1/generations/tenstorrent/minimax-h3-fl2va-lightx2v"
+    )
     assert captured["payload"] == {
         "prompt": "a volcano erupting",
         "duration": 5,
-        "height": 768,
-        "width": 1344,
         "seed": 0,
         "first_frame": "data:image/jpeg;base64,ZmFrZQ==",
     }
@@ -284,7 +284,9 @@ def test_minimax_h3_ref2va_generation_sends_one_reference_image(monkeypatch):
 
     assert ok is True
     assert job_id == "job-ref"
-    assert captured["url"].endswith("v1/generations/lightx2v/minimax-h3-turbo-ref2va")
+    assert captured["url"].endswith(
+        "v1/generations/tenstorrent/minimax-h3-ref2va-lightx2v"
+    )
     assert captured["payload"] == {
         "prompt": "a volcano erupting",
         "duration": 5,
@@ -316,13 +318,13 @@ def test_minimax_h3_ref2va_benchmark_loads_the_reference(monkeypatch):
     [
         (
             "MiniMax-H3-FL2VA",
-            "v1/generations/minimaxai/minimax-h3",
-            {"prompt", "duration", "seed", "width", "height", "first_frame"},
+            "v1/generations/minimaxai/minimax-h3-fl2va",
+            {"prompt", "duration", "seed", "first_frame"},
         ),
         (
             "MiniMax-H3-FastH3",
-            "v1/generations/minimaxai/minimax-h3-fasth3",
-            {"prompt", "duration", "seed", "width", "height"},
+            "v1/generations/tenstorrent/minimax-h3-fl2va-fasth3",
+            {"prompt", "duration", "seed"},
         ),
         (
             "MiniMax-H3-Ref2VA",

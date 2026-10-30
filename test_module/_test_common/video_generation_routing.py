@@ -28,11 +28,11 @@ GENERATIONS_API_JOBS_ENDPOINT = "v1/jobs"
 # full repo ID match.
 GENERATIONS_API_SUBMIT_ENDPOINTS = {
     "Wan2.2-I2V-A14B-Diffusers": "v1/generations/wan-ai/wan2.2-i2v-a14b",
-    "MiniMax-H3-FL2VA": "v1/generations/minimaxai/minimax-h3",
-    "MiniMax-H3-FastH3": "v1/generations/minimaxai/minimax-h3-fasth3",
+    "MiniMax-H3-FL2VA": "v1/generations/minimaxai/minimax-h3-fl2va",
+    "MiniMax-H3-FastH3": "v1/generations/tenstorrent/minimax-h3-fl2va-fasth3",
     "MiniMax-H3-Ref2VA": "v1/generations/minimaxai/minimax-h3-ref2va",
-    "MiniMax-H3-FL2VA-LightX2V": "v1/generations/lightx2v/minimax-h3-turbo",
-    "MiniMax-H3-Ref2VA-LightX2V": "v1/generations/lightx2v/minimax-h3-turbo-ref2va",
+    "MiniMax-H3-FL2VA-LightX2V": "v1/generations/tenstorrent/minimax-h3-fl2va-lightx2v",
+    "MiniMax-H3-Ref2VA-LightX2V": "v1/generations/tenstorrent/minimax-h3-ref2va-lightx2v",
 }
 FIXTURE_IMAGE_PATH = (
     Path("test_fixtures") / "datasets" / "imagenet_subset" / "imagenet_002_volcano.jpg"
@@ -101,12 +101,9 @@ def build_video_generation_payload(
             payload.update(
                 aspect_ratio="16:9", images=[fixture_image_data_uri(image_b64)]
             )
-        else:
-            # 16:9; an explicit canvas keeps the clip shape independent of the
-            # keyframe's.
-            payload.update(width=1344, height=768)
-            if "FastH3" not in model_name:
-                payload["first_frame"] = fixture_image_data_uri(image_b64)
+        elif "FastH3" not in model_name:
+            # The clip takes the keyframe's shape.
+            payload["first_frame"] = fixture_image_data_uri(image_b64)
         return payload
     if uses_generations_api(model_name):
         return {

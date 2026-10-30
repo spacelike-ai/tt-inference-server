@@ -21,8 +21,8 @@ from domain.ideogram4_request import Ideogram4Request
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.minimax_h3_request import (
     MiniMaxH3FastH3Request,
+    MiniMaxH3FL2VARequest,
     MiniMaxH3Ref2VARequest,
-    MiniMaxH3Request,
 )
 from domain.qwen_image_edit_2511_request import QwenImageEdit2511Request
 from domain.wan22_i2v_a14b_request import (
@@ -381,7 +381,7 @@ def h3_exports(monkeypatch, tmp_path):
 def test_h3_passes_the_shape_and_writes_the_video_into_the_job(h3_exports, tmp_path):
     runner = _h3_runner("TTMiniMaxH3Runner")
     request = _resolved(
-        MiniMaxH3Request(prompt="waves", aspect_ratio="9:16", duration=6),
+        MiniMaxH3FL2VARequest(prompt="waves", aspect_ratio="9:16", duration=6),
         768,
         1344,
     )
@@ -391,8 +391,6 @@ def test_h3_passes_the_shape_and_writes_the_video_into_the_job(h3_exports, tmp_p
         "prompt": "waves",
         "num_frames": 158,
         "aspect_ratio": (9, 16),
-        "height": None,
-        "width": None,
         "num_inference_steps": 50,
         "seed": 5,
     }
@@ -404,12 +402,23 @@ def test_h3_passes_the_shape_and_writes_the_video_into_the_job(h3_exports, tmp_p
     assert kwargs == {"fps": 24, "pixel_format": "yuv420p"}
 
 
+def test_h3_leaves_the_shape_of_an_adaptive_request_to_the_keyframe(h3_exports):
+    runner = _h3_runner("TTMiniMaxH3Runner")
+    request = _resolved(
+        MiniMaxH3FL2VARequest(prompt="waves", first_frame="https://x/a.png"), 768, 1344
+    )
+    request._files = {"first_frame": [_png(32, 64)]}
+    runner.run([request])
+    (call,) = runner.pipeline.calls
+    assert "aspect_ratio" not in call
+
+
 def test_h3_exports_nothing_where_no_job_keeps_the_video(h3_exports):
     runner = _h3_runner("TTMiniMaxH3Runner")
     # The deep canary, and the other ranks of a multi-host mesh.
     assert runner.run([runner._build_warmup_video_request()]) == [None]
     runner.export_in_runner = False
-    request = _resolved(MiniMaxH3Request(prompt="waves"), 1344, 768)
+    request = _resolved(MiniMaxH3FL2VARequest(prompt="waves"), 1344, 768)
     assert runner.run([request]) == [None]
     assert h3_exports == []
 
@@ -428,7 +437,7 @@ def test_h3_exports_nothing_where_no_job_keeps_the_video(h3_exports):
 )
 def test_h3_decodes_the_keyframes(keyframes, expected):
     runner = _h3_runner("TTMiniMaxH3TurboRunner")
-    request = _resolved(MiniMaxH3Request(prompt="waves"), 1344, 768)
+    request = _resolved(MiniMaxH3FL2VARequest(prompt="waves"), 1344, 768)
     request._files = {
         name: [_png(*size) for size in sizes] for name, sizes in keyframes.items()
     }
@@ -510,7 +519,7 @@ def test_h3_fasth3_runs_four_steps(h3_exports):
 def test_h3_deep_canary_is_the_shortest_video(class_name, inputs):
     runner = _h3_runner(class_name)
     request = runner._build_warmup_video_request()
-    assert (request.frames, request.aspect_ratio, request.width) == (107, "16:9", None)
+    assert (request.frames, request.aspect_ratio) == (107, "16:9")
     assert request._prompt
     assert {
         name: [runner._images(request, name)[0].size] for name in request._files

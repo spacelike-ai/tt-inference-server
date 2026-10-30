@@ -539,9 +539,12 @@ class _MiniMaxH3Runner(_GenerationRunner):
         output = self.pipeline(
             request._prompt,
             num_frames=request.frames,
-            aspect_ratio=tuple(map(int, request.aspect_ratio.split(":"))),
-            height=request.height,
-            width=request.width,
+            # With a keyframe, the pipeline takes the shape from it.
+            **(
+                {}
+                if request.aspect_ratio == "adaptive"
+                else {"aspect_ratio": tuple(map(int, request.aspect_ratio.split(":")))}
+            ),
             num_inference_steps=self.num_inference_steps,
             seed=request._seed,
             **inputs,

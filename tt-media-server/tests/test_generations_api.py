@@ -22,23 +22,23 @@ import numpy as np
 import pytest
 import yaml
 from config.constants import JobTypes
-from domain.generation_request import MEDIA_MAX_BYTES
 from domain.flux2_klein_4b_request import Flux2klein4bRequest
+from domain.generation_request import MEDIA_MAX_BYTES
 from domain.ideogram4_request import Ideogram4Request
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.minimax_h3_request import (
     MiniMaxH3FastH3Request,
+    MiniMaxH3FL2VALightX2VRequest,
+    MiniMaxH3FL2VARequest,
+    MiniMaxH3Ref2VALightX2VRequest,
     MiniMaxH3Ref2VARequest,
-    MiniMaxH3Request,
-    MiniMaxH3TurboRef2VARequest,
-    MiniMaxH3TurboRequest,
 )
 from domain.qwen_image_edit_2511_request import QwenImageEdit2511Request
 from domain.wan22_i2v_a14b_request import WAN_NEGATIVE_PROMPT, Wan22i2vA14bRequest
 from fastapi import FastAPI
 from PIL import Image
 from pydantic import ValidationError
-from utils.media_probe import ReferenceMediaProbe
+from utils.media_probe import ReferenceMediaProbe, media_format_error
 from utils.video_manager import VideoAudioResult, VideoManager
 
 _SPEC_DIR = pathlib.Path(__file__).resolve().parents[1] / "docs" / "api" / "generation"
@@ -87,18 +87,24 @@ def _resolved(schema: dict, defs: dict) -> dict:
         Flux2klein4bRequest,
         Ideogram4Request,
         Ltx23DistilledRequest,
-        MiniMaxH3Request,
-        MiniMaxH3TurboRequest,
+        MiniMaxH3FL2VARequest,
+        MiniMaxH3FL2VALightX2VRequest,
         MiniMaxH3FastH3Request,
         MiniMaxH3Ref2VARequest,
-        MiniMaxH3TurboRef2VARequest,
+        MiniMaxH3Ref2VALightX2VRequest,
     ],
 )
 def test_request_schema_matches_the_spec(request_model):
-    spec = yaml.safe_load(
-        (_SPEC_DIR / "models" / f"{request_model.MODEL_ID}.yaml").read_text()
-    )
-    expected = spec["components"]["schemas"][request_model.__name__]
+    path = _SPEC_DIR / "models" / f"{request_model.MODEL_ID}.yaml"
+    spec = yaml.safe_load(path.read_text())
+    submit = spec["paths"][f"/v1/generations/{request_model.MODEL_ID}"]["post"]
+    # A variant's file takes its base model's schema by reference.
+    file, _, pointer = submit["requestBody"]["content"]["application/json"]["schema"][
+        "$ref"
+    ].partition("#/components/schemas/")
+    if file:
+        spec = yaml.safe_load((path.parent / file).read_text())
+    expected = spec["components"]["schemas"][pointer]
     actual = request_model.model_json_schema()
     defs = actual.get("$defs", {})
 
@@ -141,7 +147,7 @@ def test_unknown_field_rejected():
     ["http://example.com/a.png", "iVBORw0KGgo=", "data:text/plain;base64,aGk="],
 )
 def test_media_must_be_https_or_image_data_uri(media):
-    with pytest.raises(ValidationError, match="https:// URL, a base64 data URI"):
+    with pytest.raises(ValidationError, match="https:// URL or a base64 data URI"):
         Wan22i2vA14bRequest(
             prompt="a boat", first_frame=media, aspect_ratio="16:9", size="480p"
         )
@@ -164,7 +170,10 @@ def test_wan_fields():
     assert len(set(Wan22i2vA14bRequest.warmup_sizes())) == 4
 
 
-@pytest.mark.parametrize("fields", [{}, {"duration": 6}, {"duration": 6.12}])
+@pytest.mark.parametrize(
+    "fields",
+    [{}, {"duration": 6, "fps": 25, "aspect_ratio": "16:9", "size": "1080p"}],
+)
 def test_ltx_serves_one_shape(fields):
     request = Ltx23DistilledRequest(prompt="a violinist", **fields)
     assert (request.frames, request.fps, request.output_size()) == (
@@ -177,11 +186,11 @@ def test_ltx_serves_one_shape(fields):
 @pytest.mark.parametrize(
     ("fields", "message"),
     [
-        ({"duration": 5.8}, "145 frames"),
-        ({"duration": float("inf")}, "finite number"),
-        ({"frames": 150}, "greater than or equal to 153"),
-        ({"fps": 24}, "greater than or equal to 25"),
-        ({"height": 720}, "greater than or equal to 1088"),
+        ({"duration": 5}, "Input should be 6"),
+        ({"fps": 24}, "Input should be 25"),
+        ({"aspect_ratio": "9:16"}, "Input should be '16:9'"),
+        ({"size": "720p"}, "Input should be '1080p'"),
+        ({"height": 1088}, "extra"),
         ({"num_inference_steps": 11}, "extra"),
     ],
 )
@@ -522,7 +531,7 @@ async def test_video_job(generations_app):
     assert output["type"] == "video" and output["content_type"] == "video/mp4"
     assert (output["width"], output["height"], output["fps"]) == (480, 832, 16)
     assert output["num_frames"] == 81 and output["duration"] == 81 / 16
-    assert output["audio"] is False
+    assert output["audio"] is None
     content = await client.get(output["url"])
     assert content.headers["content-type"] == "video/mp4" and content.content
 
@@ -553,15 +562,15 @@ async def test_video_with_sound_job(generations_app, encoded_by_the_pipeline):
     else:
         device.video = lambda request: _sound_video()
     response = await client.post(
-        "/v1/generations/lightricks/ltx-2.3-distilled",
+        "/v1/generations/lightricks/ltx-2.3-22b-distilled",
         json={"prompt": "a violinist", "duration": 6},
     )
     assert response.status_code == 202, response.text
     job = await _wait_final(client, response.json()["id"])
     assert job["status"] == "completed", job
     (output,) = job["outputs"]
-    assert output["audio"] is True and output["fps"] == 25
-    assert output["num_frames"] == 9
+    assert output["audio"] == {"codec": "aac", "sample_rate": 16000, "channels": 2}
+    assert output["fps"] == 25 and output["num_frames"] == 9
     content = await client.get(output["url"])
     with av.open(BytesIO(content.content)) as container:
         assert container.streams.video and container.streams.audio
@@ -717,7 +726,8 @@ async def test_what_a_runner_leaves_in_a_failed_jobs_directory_goes_with_it(
 
     device.video = video
     response = await client.post(
-        "/v1/generations/lightricks/ltx-2.3-distilled", json={"prompt": "a violinist"}
+        "/v1/generations/lightricks/ltx-2.3-22b-distilled",
+        json={"prompt": "a violinist"},
     )
     job = await _wait_final(client, response.json()["id"])
     assert job["status"] == "failed"
@@ -747,8 +757,8 @@ def test_generation_job_type_and_manifest_roundtrip(tmp_path):
     assert JobTypes.GENERATION.value == "generation"
 
 
-async def test_an_earlier_output_is_an_input_by_its_url(generations_app):
-    client, device = generations_app("tt-qwen-image-edit-2511")
+async def test_an_earlier_output_is_not_an_input(generations_app):
+    client, _ = generations_app("tt-qwen-image-edit-2511")
     first = (
         await client.post(
             "/v1/generations/qwen/qwen-image-edit-2511",
@@ -761,32 +771,8 @@ async def test_an_earlier_output_is_an_input_by_its_url(generations_app):
         "/v1/generations/qwen/qwen-image-edit-2511",
         json={"prompt": "a scarf", "images": [output["url"]]},
     )
-    assert response.status_code == 202, response.text
-    assert (await _wait_final(client, response.json()["id"]))["status"] == "completed"
-    assert device.requests[-1]._images["images"][0].size == (1376, 768)
-
-    missing = await client.post(
-        "/v1/generations/qwen/qwen-image-edit-2511",
-        json={"prompt": "x", "images": ["/v1/jobs/nope/content/0"]},
-    )
-    assert missing.status_code == 422
-    assert missing.json()["detail"][0]["loc"] == ["body", "images", 0]
-
-
-async def test_an_unfinished_jobs_output_is_not_an_input(generations_app):
-    client, _ = generations_app("tt-qwen-image-edit-2511", delay=0.5)
-    running = (
-        await client.post(
-            "/v1/generations/qwen/qwen-image-edit-2511",
-            json={"prompt": "a hat", "images": [_data_uri(1600, 900)]},
-        )
-    ).json()
-    response = await client.post(
-        "/v1/generations/qwen/qwen-image-edit-2511",
-        json={"prompt": "a scarf", "images": [f"/v1/jobs/{running['id']}/content/0"]},
-    )
     assert response.status_code == 422
-    assert "has no completed result" in response.json()["detail"][0]["msg"]
+    assert response.json()["detail"][0]["loc"] == ["body", "images", 0]
 
 
 def test_stored_request_digests_data_uris():
@@ -895,7 +881,7 @@ def _probe(duration_s=5.0, size=(64, 64), fps=25.0, audio_channels=2):
     ("duration", "frames"), [(4, 107), (5, 124), (6, 158), (15, 362)]
 )
 def test_h3_frames_are_the_next_17n_plus_5(duration, frames):
-    assert MiniMaxH3Request(prompt="x", duration=duration).frames == frames
+    assert MiniMaxH3FL2VARequest(prompt="x", duration=duration).frames == frames
 
 
 @pytest.mark.parametrize(
@@ -905,24 +891,30 @@ def test_h3_frames_are_the_next_17n_plus_5(duration, frames):
         ({"aspect_ratio": "21:9"}, {}, (1536, 672)),
         ({"aspect_ratio": "9:16"}, {}, (768, 1344)),
         ({"aspect_ratio": "1:1"}, {}, (768, 768)),
-        ({"width": 832, "height": 480}, {}, (1344, 768)),
-        # A keyframe sets the shape, unless width and height do.
-        ({}, {"last_frame": [(600, 800)]}, (768, 1024)),
-        ({"width": 832, "height": 480}, {"first_frame": [(600, 800)]}, (1344, 768)),
+        # A keyframe sets the shape, the first frame's if there are two.
+        ({"last_frame": "https://x/b.png"}, {"last_frame": [(600, 800)]}, (768, 1024)),
+        (
+            {"first_frame": "https://x/a.png", "last_frame": "https://x/b.png"},
+            {"first_frame": [(600, 800)], "last_frame": [(800, 600)]},
+            (768, 1024),
+        ),
     ],
 )
 def test_h3_output_size(fields, images, expected):
-    request = _with_images(MiniMaxH3Request(prompt="x", **fields), **images)
+    request = _with_images(MiniMaxH3FL2VARequest(prompt="x", **fields), **images)
     assert request.output_size() == expected
 
 
 @pytest.mark.parametrize(
     ("fields", "message"),
     [
-        ({"width": 832}, "both width and height"),
-        ({"width": 1344, "height": 800}, "at most 1032192"),
-        ({"width": 1280, "height": 288}, "1:4 to 4:1"),
-        ({"width": 830, "height": 480}, "multiple of 32"),
+        ({"aspect_ratio": "adaptive"}, "needs a first_frame or last_frame"),
+        (
+            {"first_frame": "https://x/a.png", "aspect_ratio": "16:9"},
+            "must be adaptive",
+        ),
+        ({"size": "720p"}, "'768p'"),
+        ({"width": 832, "height": 480}, "extra"),
         ({"duration": 3}, "greater than or equal to 4"),
         ({"duration": 5.5}, "integer"),
         ({"aspect_ratio": "2:1"}, "'21:9'"),
@@ -932,18 +924,24 @@ def test_h3_output_size(fields, images, expected):
 )
 def test_h3_rejects(fields, message):
     with pytest.raises(ValidationError, match=message):
-        MiniMaxH3Request(prompt="x", **fields)
+        MiniMaxH3FL2VARequest(prompt="x", **fields)
+
+
+def test_h3_aspect_ratio_defaults_to_adaptive_with_a_frame():
+    assert MiniMaxH3FL2VARequest(prompt="x").aspect_ratio == "16:9"
+    with_frame = MiniMaxH3FL2VARequest(prompt="x", last_frame="https://x/a.png")
+    assert with_frame.aspect_ratio == "adaptive"
 
 
 @pytest.mark.parametrize("ratio", ["16x9", "16/9", " 16 : 9 ", "016:9"])
 def test_h3_ratio_spellings_of_the_earlier_api(ratio):
-    assert MiniMaxH3Request(prompt="x", aspect_ratio=ratio).aspect_ratio == "16:9"
+    assert MiniMaxH3FL2VARequest(prompt="x", aspect_ratio=ratio).aspect_ratio == "16:9"
 
 
 @pytest.mark.parametrize("prompt", ["", "   "])
 def test_h3_prompt_must_not_be_blank(prompt):
     with pytest.raises(ValidationError):
-        MiniMaxH3Request(prompt=prompt)
+        MiniMaxH3FL2VARequest(prompt=prompt)
 
 
 def test_fasth3_takes_no_keyframes():
@@ -961,7 +959,7 @@ def test_fasth3_takes_no_keyframes():
     ],
 )
 def test_h3_keyframe_limits(images, errors):
-    request = _with_images(MiniMaxH3Request(prompt="x"), **images)
+    request = _with_images(MiniMaxH3FL2VARequest(prompt="x"), **images)
     got = request.media_errors()
     assert [(name, index) for name, index, _ in got] == [(n, 0) for n, _ in errors]
     for (_, _, message), (_, expected) in zip(got, errors):
@@ -994,11 +992,26 @@ def test_h3_ref2va_rejects(fields, message):
 @pytest.mark.parametrize(
     ("probes", "errors"),
     [
-        ({"videos": [_probe(), _probe(10.0)], "audios": [_probe(15.0, None, None, 1)]}, []),
+        (
+            {
+                "videos": [_probe(), _probe(10.0, audio_channels=None)],
+                "audios": [_probe(10.0, None, None, 1)],
+            },
+            [],
+        ),
         ({"videos": [_probe(1.5)]}, [("videos", 0, "2 to 15 s")]),
         (
             {"audios": [_probe(16.0, None, None)]},
-            [("audios", 0, "2 to 15 s"), ("audios", 0, "16 s together")],
+            [("audios", 0, "2 to 15 s"), ("audios", 0, "16 s of audio together")],
+        ),
+        # A video's soundtrack counts toward the audio limits.
+        (
+            {"videos": [_probe(5.0)], "audios": [_probe(11.0, None, None)]},
+            [("audios", 0, "16 s of audio together")],
+        ),
+        (
+            {"videos": [_probe(3.0)] * 3, "audios": [_probe(3.0, None, None)]},
+            [("audios", 0, "4 audio references")],
         ),
         ({"videos": [_probe(8.0), _probe(8.0)]}, [("videos", 1, "16 s together")]),
         ({"videos": [_probe(size=None)]}, [("videos", 0, "no video stream")]),
@@ -1018,6 +1031,47 @@ def test_h3_reference_clip_limits(probes, errors):
         assert expected in message
 
 
+_MP4 = "mov,mp4,m4a,3gp,3g2,mj2"
+
+
+@pytest.mark.parametrize(
+    ("kind", "probe", "error"),
+    [
+        ("video", (_MP4, "h264", "aac"), None),
+        ("video", (_MP4, "hevc", "mp3"), None),
+        ("video", (_MP4, "h264", None), None),
+        ("video", ("matroska,webm", "vp9", "opus"), "must be MP4 or MOV"),
+        ("video", (_MP4, "mpeg4", None), "must be H.264 or H.265"),
+        ("video", (_MP4, "h264", "opus"), "must be AAC or MP3"),
+        ("audio", ("wav", None, "pcm_s16le"), None),
+        ("audio", ("mp3", None, "mp3"), None),
+        ("audio", ("ogg", None, "vorbis"), "must be WAV or MP3"),
+        ("audio", (_MP4, None, "aac"), "must be WAV or MP3"),
+    ],
+)
+def test_clip_formats(kind, probe, error):
+    container, video_codec, audio_codec = probe
+    message = media_format_error(
+        kind,
+        ReferenceMediaProbe(5.0, None, None, None, container, video_codec, audio_codec),
+    )
+    assert message is None if error is None else error in message
+
+
+async def test_a_clip_in_another_format_is_422(generations_app):
+    client, device = generations_app("tt-minimax-h3-ref2va")
+    audio = _clip_data_uri(3).replace("data:video/", "data:audio/", 1)  # an MP4
+    response = await client.post(
+        "/v1/generations/minimaxai/minimax-h3-ref2va",
+        json={"prompt": "x", "images": [_data_uri()], "audios": [audio]},
+    )
+    assert response.status_code == 422
+    (error,) = response.json()["detail"]
+    assert error["loc"] == ["body", "audios", 0]
+    assert "must be WAV or MP3" in error["msg"]
+    assert device.requests == []
+
+
 async def test_h3_keyframes_job(generations_app):
     client, device = generations_app("tt-minimax-h3-fl2va")
     device.video = lambda request: VideoAudioResult(
@@ -1027,7 +1081,7 @@ async def test_h3_keyframes_job(generations_app):
         fps=24,
     )
     response = await client.post(
-        "/v1/generations/minimaxai/minimax-h3",
+        "/v1/generations/minimaxai/minimax-h3-fl2va",
         json={"prompt": "a lighthouse", "first_frame": _data_uri(600, 800)},
     )
     assert response.status_code == 202, response.text
@@ -1039,14 +1093,15 @@ async def test_h3_keyframes_job(generations_app):
     assert request._images == {}
     assert Image.open(BytesIO(request._files["first_frame"][0])).size == (600, 800)
     (output,) = job["outputs"]
-    assert output["audio"] is True and output["fps"] == 24
-    assert output["num_frames"] == 124 and output["duration"] == 124 / 24
+    assert output["audio"] == {"codec": "aac", "sample_rate": 48000, "channels": 2}
+    assert output["fps"] == 24 and output["num_frames"] == 124
+    assert output["duration"] == 124 / 24
 
 
 async def test_h3_keyframe_out_of_limits_is_422(generations_app):
     client, device = generations_app("tt-minimax-h3-fl2va-lightx2v")
     response = await client.post(
-        "/v1/generations/lightx2v/minimax-h3-turbo",
+        "/v1/generations/tenstorrent/minimax-h3-fl2va-lightx2v",
         json={"prompt": "x", "last_frame": _data_uri(200, 300)},
     )
     assert response.status_code == 422
@@ -1092,24 +1147,6 @@ async def test_h3_references_are_loaded_and_checked(generations_app):
     errors = response.json()["detail"]
     assert [error["loc"] for error in errors] == [["body", "videos", 1]]
     assert "not a readable video or audio file" in errors[0]["msg"]
-
-
-async def test_inline_media_cap_is_per_model(generations_app, monkeypatch):
-    monkeypatch.setattr(MiniMaxH3Ref2VARequest, "INLINE_MEDIA_MAX_CHARS", 100)
-    client, device = generations_app("tt-minimax-h3-ref2va")
-    response = await client.post(
-        "/v1/generations/minimaxai/minimax-h3-ref2va",
-        json={"prompt": "x", "images": [_data_uri()]},
-    )
-    assert response.status_code == 413
-    assert "send large inputs by URL" in response.json()["detail"]
-    # Qwen has no cap.
-    client, _ = generations_app("tt-qwen-image-edit-2511")
-    response = await client.post(
-        "/v1/generations/qwen/qwen-image-edit-2511",
-        json={"prompt": "x", "images": [_data_uri()] * 3},
-    )
-    assert response.status_code == 202, response.text
 
 
 async def test_a_too_large_clip_is_413_naming_its_kind(generations_app, monkeypatch):

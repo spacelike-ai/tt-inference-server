@@ -34,8 +34,8 @@ Blackhole Galaxy (32 chips). Verified end-to-end: 1080p h264+aac, **153 frames @
 1080p / 153 frames / 25 fps is baked into the runner
 (`LTX_NUM_FRAMES`/`LTX_HEIGHT`/`LTX_WIDTH`/`LTX_FPS` in `config/constants.py`) and
 into the captured traces, so a request cannot change it: the shape fields of
-`POST /v1/generations/lightricks/ltx-2.3-distilled` each allow only the served value
-(`docs/api/generation/models/lightricks/ltx-2.3-distilled.yaml`).
+`POST /v1/generations/lightricks/ltx-2.3-22b-distilled` each allow only the served value
+(`docs/api/generation/models/lightricks/ltx-2.3-22b-distilled.yaml`).
 
 | | value | why |
 |---|---|---|
@@ -95,7 +95,7 @@ discarded rather than left in `TT_GENERATIONS_DIR`.
 ```bash
 AUTH='Authorization: Bearer your-secret-key'   # default; override with API_KEY, or NO_AUTH=1
 PORT=8000                                      # 8082 if started via the manual command above
-JOB=$(curl -s -X POST localhost:$PORT/v1/generations/lightricks/ltx-2.3-distilled -H "$AUTH" \
+JOB=$(curl -s -X POST localhost:$PORT/v1/generations/lightricks/ltx-2.3-22b-distilled -H "$AUTH" \
   -H 'Content-Type: application/json' -d '{"prompt":"...","seed":10}' | jq -r .id)
 curl -s -H "$AUTH" localhost:$PORT/v1/jobs/$JOB          # poll until "completed"
 curl -s -H "$AUTH" -o out.mp4 localhost:$PORT/v1/jobs/$JOB/content/0

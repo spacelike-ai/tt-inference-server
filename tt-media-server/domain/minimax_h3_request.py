@@ -39,6 +39,11 @@ H3Ratio = Annotated[
     Literal["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],
     BeforeValidator(_normalized_ratio),
 ]
+# `adaptive` follows the keyframe's shape.
+H3KeyframesRatio = Annotated[
+    Literal["adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],
+    BeforeValidator(_normalized_ratio),
+]
 H3_FPS = 24
 H3_SHORT_EDGE = 768
 H3_MAX_PIXELS = 768 * 1344
@@ -52,6 +57,8 @@ H3_KEYFRAME_MAX_SIDE = 5760
 H3_CLIP_MIN_S = 2.0
 H3_CLIP_MAX_S = 15.0
 H3_CLIPS_MAX_S = 15.0
+# The audio clips plus the reference videos with a soundtrack.
+H3_AUDIO_REFERENCES_MAX = 3
 
 
 def h3_num_frames(duration: int) -> int:
@@ -88,42 +95,33 @@ def _within_1_4_and_4_1(width: int, height: int) -> bool:
 
 class _MiniMaxH3Request(GenerationRequest):
     OUTPUT_TYPE = "video"
-    AUDIO = True
-    INLINE_MEDIA_MAX_CHARS = 64_000_000
     # Reference images can each decode to hundreds of MB, too much to send to
     # every rank of a multi-host mesh.
     RUNNER_DECODES_IMAGES = True
 
-    prompt: str = Field(
-        min_length=1,
-        description="Describes the picture and the sound. At most 3008 tokens.",
-    )
+    prompt: str = Field(min_length=1)
     aspect_ratio: H3Ratio = Field(
         default="16:9",
+        description="Output shape. Each output reports its exact size.",
+    )
+    size: Literal["768p"] = Field(
+        default="768p",
         description=(
-            "Output shape, unless `width` and `height` are set. The size follows: "
-            "the short side 768, the area at most 768 × 1344, each side a "
-            "multiple of 32 (`16:9` 1344×768, `21:9` 1536×672)."
+            "Size tier: a short edge of 768, the area capped at 768×1344, sides "
+            "multiples of 32 (`16:9` 1344×768, `21:9` 1536×672). Only `768p` for "
+            "now; kept so other tiers can be added without a schema change."
         ),
     )
-    width: Optional[int] = Field(
-        default=None,
-        ge=H3_CANVAS_MULTIPLE,
-        multiple_of=H3_CANVAS_MULTIPLE,
+    duration: int = Field(
+        default=5,
+        ge=4,
+        le=15,
         description=(
-            "With `height`, the output shape in place of `aspect_ratio`: a "
-            "multiple of 32, `width × height` at most 1,032,192, the ratio from "
-            "1:4 to 4:1. It is resized like `aspect_ratio`, so it sets the shape, "
-            "not the size: 832 × 480 gives 1344×768."
+            "Seconds. The video runs at 24 fps and its length is rounded up to the "
+            "frame counts the model generates (17k + 5): 5 s gives 124 frames "
+            "(5.17 s). Each output reports its exact `duration` and `num_frames`."
         ),
     )
-    height: Optional[int] = Field(
-        default=None,
-        ge=H3_CANVAS_MULTIPLE,
-        multiple_of=H3_CANVAS_MULTIPLE,
-        description="See `width`.",
-    )
-    duration: int = Field(default=5, ge=4, le=15, description="Seconds.")
     seed: Optional[Seed] = None
 
     @field_validator("prompt")
@@ -132,20 +130,6 @@ class _MiniMaxH3Request(GenerationRequest):
         if not value.strip():
             raise ValueError("prompt must not be empty")
         return value
-
-    @model_validator(mode="after")
-    def _canvas(self):
-        if (self.width is None) != (self.height is None):
-            raise ValueError("set both width and height, or neither")
-        if self.width is not None:
-            if self.width * self.height > H3_MAX_PIXELS:
-                raise ValueError(
-                    f"width × height must be at most {H3_MAX_PIXELS}; got "
-                    f"{self.width} × {self.height}"
-                )
-            if not _within_1_4_and_4_1(self.width, self.height):
-                raise ValueError("width : height must be from 1:4 to 4:1")
-        return self
 
     @property
     def fps(self) -> int:
@@ -156,8 +140,6 @@ class _MiniMaxH3Request(GenerationRequest):
         return h3_num_frames(self.duration)
 
     def output_size(self) -> tuple[int, int]:
-        if self.width is not None:
-            return h3_canvas(self.width, self.height)
         return h3_canvas(*map(int, self.aspect_ratio.split(":")))
 
     @classmethod
@@ -172,19 +154,40 @@ class _MiniMaxH3KeyframesRequest(_MiniMaxH3Request):
     first_frame: Optional[Media] = Field(
         default=None,
         description=(
-            "The image the video starts from. Each side 256 to 5760 px, the ratio "
-            "from 1:4 to 4:1. Stretched to the output size. Without `width` and "
-            "`height`, the output takes its shape instead of `aspect_ratio`'s."
+            "The frame the video starts on. 256–5760 pixels per side, aspect "
+            "ratio from 1:4 to 4:1."
         ),
     )
     last_frame: Optional[Media] = Field(
         default=None,
         description=(
-            "The image the video ends on, with the same limits. With a "
-            "`first_frame`, resized to fill the output and center-cropped; alone, "
-            "stretched, and the output takes its shape as for `first_frame`."
+            "The frame the video ends on. Allowed with or without `first_frame`. "
+            "Same limits as `first_frame`."
         ),
     )
+    aspect_ratio: Optional[H3KeyframesRatio] = Field(
+        default=None,
+        description=(
+            "Output shape. With a frame: only `adaptive` (the default), meaning "
+            "the output follows the first frame's shape, or the last frame's when "
+            "there is no first frame. Without frames: one of the listed ratios, "
+            "default `16:9`. Each output reports its exact size."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _adaptive_with_frames(self):
+        has_frame = self.first_frame is not None or self.last_frame is not None
+        if self.aspect_ratio is None:
+            self.aspect_ratio = "adaptive" if has_frame else "16:9"
+        elif has_frame and self.aspect_ratio != "adaptive":
+            raise ValueError(
+                "with a first_frame or last_frame, aspect_ratio must be adaptive: "
+                "the output follows the frame's shape"
+            )
+        elif not has_frame and self.aspect_ratio == "adaptive":
+            raise ValueError("aspect_ratio adaptive needs a first_frame or last_frame")
+        return self
 
     def media_errors(self) -> list[tuple[str, int, str]]:
         errors = []
@@ -209,47 +212,70 @@ class _MiniMaxH3KeyframesRequest(_MiniMaxH3Request):
         return errors
 
     def output_size(self) -> tuple[int, int]:
-        keyframe = self._images.get("first_frame") or self._images.get("last_frame")
-        if self.width is None and keyframe:
+        if self.aspect_ratio == "adaptive":
+            keyframe = self._images.get("first_frame") or self._images["last_frame"]
             return h3_canvas(*keyframe[0].size)
         return super().output_size()
 
 
-class MiniMaxH3Request(_MiniMaxH3KeyframesRequest):
-    MODEL_ID = "minimaxai/minimax-h3"
+class MiniMaxH3FL2VARequest(_MiniMaxH3KeyframesRequest):
+    MODEL_ID = "minimaxai/minimax-h3-fl2va"
 
 
-class MiniMaxH3TurboRequest(_MiniMaxH3KeyframesRequest):
-    MODEL_ID = "lightx2v/minimax-h3-turbo"
+class MiniMaxH3FL2VALightX2VRequest(_MiniMaxH3KeyframesRequest):
+    MODEL_ID = "tenstorrent/minimax-h3-fl2va-lightx2v"
 
 
 class MiniMaxH3FastH3Request(_MiniMaxH3Request):
-    MODEL_ID = "minimaxai/minimax-h3-fasth3"
+    MODEL_ID = "tenstorrent/minimax-h3-fl2va-fasth3"
 
 
 class _MiniMaxH3ReferencesRequest(_MiniMaxH3Request):
+    """References: at most 12 in total, and at least one image or video. Video
+    and audio clips are 2–15 s each and at most 15 s combined per kind. A
+    reference video's soundtrack counts toward the audio limits as well as the
+    video ones, and once toward the 12-reference total."""
+
     MEDIA_FIELDS = ("images", "videos", "audios")
     MEDIA_KINDS = {"videos": "video", "audios": "audio"}
 
+    prompt: str = Field(
+        min_length=1,
+        description=(
+            "Refer to references by kind and position, numbered per kind in the "
+            "order given: `Picture 1` (the first of `images`), `Video 1`, `Audio "
+            "1`. The model sees each reference under that label. A video's own "
+            "sound track counts as an audio reference too."
+        ),
+    )
     images: list[Media] = Field(
         default=[],
         max_length=9,
-        description="Reference images, each with a ratio from 1:4 to 4:1.",
+        description="Reference images, aspect ratio from 1:4 to 4:1.",
     )
     videos: list[VideoMedia] = Field(
         default=[],
         max_length=3,
         description=(
-            "Reference videos, each 2 to 15 s with a ratio from 1:4 to 4:1, at "
-            "most 15 s together. A video's soundtrack is a reference too."
+            "Reference video clips, 2–15 s each, at most 15 s combined. A clip's "
+            "soundtrack, if it has one, is also audio conditioning and counts "
+            "toward the audio limits (see `audios`)."
         ),
     )
     audios: list[AudioMedia] = Field(
         default=[],
         max_length=3,
         description=(
-            "Reference audio clips, each 2 to 15 s, at most 15 s together. Only "
-            "with at least one image or video."
+            "Reference audio clips, 2–15 s each. The audio limits cover these "
+            "clips plus the soundtrack of every reference video that has one: at "
+            "most 3 audio references and at most 15 s of audio combined."
+        ),
+    )
+    aspect_ratio: H3Ratio = Field(
+        default="16:9",
+        description=(
+            "Output shape, as for text-to-video: the references don't set it. "
+            "Each output reports its exact size."
         ),
     )
 
@@ -294,11 +320,30 @@ class _MiniMaxH3ReferencesRequest(_MiniMaxH3Request):
                         (name, index, f"has {probe.audio_channels} audio channels; "
                          "must be mono or stereo")
                     )
-            total = sum(probe.duration_s for probe in probes)
+        videos = self._probes.get("videos", [])
+        total = sum(probe.duration_s for probe in videos)
+        if total > H3_CLIPS_MAX_S:
+            errors.append(
+                ("videos", len(videos) - 1, f"the clips are {total:g} s together; "
+                 f"at most {H3_CLIPS_MAX_S:g} s")
+            )
+        # The soundtracks of the videos alone stay within the audio limits, or
+        # the videos are over theirs; going over takes an audio clip, and the
+        # error points at the last one.
+        audios = self._probes.get("audios", [])
+        if audios:
+            sounds = audios + [probe for probe in videos if probe.audio_channels]
+            if len(sounds) > H3_AUDIO_REFERENCES_MAX:
+                errors.append(
+                    ("audios", len(audios) - 1, f"with the videos' soundtracks, "
+                     f"{len(sounds)} audio references; at most "
+                     f"{H3_AUDIO_REFERENCES_MAX}")
+                )
+            total = sum(probe.duration_s for probe in sounds)
             if total > H3_CLIPS_MAX_S:
                 errors.append(
-                    (name, len(probes) - 1, f"the clips are {total:g} s together; "
-                     f"at most {H3_CLIPS_MAX_S:g} s")
+                    ("audios", len(audios) - 1, f"with the videos' soundtracks, "
+                     f"{total:g} s of audio together; at most {H3_CLIPS_MAX_S:g} s")
                 )
         return errors
 
@@ -307,5 +352,5 @@ class MiniMaxH3Ref2VARequest(_MiniMaxH3ReferencesRequest):
     MODEL_ID = "minimaxai/minimax-h3-ref2va"
 
 
-class MiniMaxH3TurboRef2VARequest(_MiniMaxH3ReferencesRequest):
-    MODEL_ID = "lightx2v/minimax-h3-turbo-ref2va"
+class MiniMaxH3Ref2VALightX2VRequest(_MiniMaxH3ReferencesRequest):
+    MODEL_ID = "tenstorrent/minimax-h3-ref2va-lightx2v"

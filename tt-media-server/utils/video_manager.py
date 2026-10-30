@@ -459,6 +459,10 @@ class VideoProbe:
     height: Optional[int] = None
     num_frames: Optional[int] = None
     duration_seconds: Optional[float] = None
+    # Of the first audio stream; None without one.
+    audio_codec: Optional[str] = None
+    audio_sample_rate: Optional[int] = None
+    audio_channels: Optional[int] = None
 
 
 def probe_video(path: str) -> VideoProbe:
@@ -505,12 +509,22 @@ def probe_video(path: str) -> VideoProbe:
                 if rate:
                     num_frames = round(duration * float(rate)) or None
 
+            audio_codec = audio_sample_rate = audio_channels = None
+            if container.streams.audio:
+                audio = container.streams.audio[0].codec_context
+                audio_codec = audio.name
+                audio_sample_rate = audio.sample_rate
+                audio_channels = audio.channels
+
             return VideoProbe(
                 size_bytes=size_bytes,
                 width=width,
                 height=height,
                 num_frames=num_frames,
                 duration_seconds=duration,
+                audio_codec=audio_codec,
+                audio_sample_rate=audio_sample_rate,
+                audio_channels=audio_channels,
             )
     except Exception:
         return VideoProbe(size_bytes=size_bytes)

@@ -4,7 +4,7 @@
 
 from typing import Annotated, Literal, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_serializer
 
 
 class JobError(BaseModel):
@@ -44,15 +44,21 @@ class ImageOutput(_OutputBase):
     type: Literal["image"] = "image"
 
 
+class AudioTrack(BaseModel):
+    codec: Literal["aac"]
+    sample_rate: int = Field(description="Hz.")
+    channels: int
+
+
 class VideoOutput(_OutputBase):
     type: Literal["video"] = "video"
     fps: int
     num_frames: int
     duration: float = Field(description="Seconds.")
-    audio: bool = Field(
+    audio: Optional[AudioTrack] = Field(
         description=(
-            "Whether the video has a soundtrack, generated with it by the model. "
-            "Fixed per model."
+            "The AAC soundtrack, when the model generates sound; otherwise null "
+            "and the file has no audio track."
         )
     )
 
@@ -84,6 +90,15 @@ class Job(BaseModel):
         min_length=1,
         description="Set when `completed`: one per image (`count` of them) or one video.",
     )
+
+    @model_serializer(mode="wrap")
+    def _without_unset(self, handler):
+        # These are left out until they apply, rather than sent as null.
+        data = handler(self)
+        for name in ("completed_at", "expires_at", "error", "outputs"):
+            if data.get(name) is None:
+                data.pop(name, None)
+        return data
 
     @classmethod
     def from_metadata(

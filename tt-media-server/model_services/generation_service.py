@@ -19,7 +19,6 @@ from config.settings import settings
 from domain.generation_request import (
     MAX_SEED,
     MEDIA_MAX_BYTES,
-    OUTPUT_URL,
     GenerationRequest,
 )
 from fastapi import HTTPException
@@ -32,7 +31,11 @@ from utils.media_downloader import (
     MediaDownloadTooLargeError,
     download_media_url,
 )
-from utils.media_probe import decode_image, probe_reference_media
+from utils.media_probe import (
+    decode_image,
+    media_format_error,
+    probe_reference_media,
+)
 from utils.video_manager import VideoAudioResult, VideoManager, probe_video
 
 # The file in a job's directory listing its outputs.
@@ -170,21 +173,6 @@ class GenerationService(BaseJobService):
         problem is a 422.
         """
         media = request.media()
-        inline = sum(
-            len(value)
-            for values in media.values()
-            for value in values
-            if value[:5].lower() == "data:"
-        )
-        limit = request.INLINE_MEDIA_MAX_CHARS
-        if limit is not None and inline > limit:
-            raise HTTPException(
-                status_code=413,
-                detail=(
-                    f"The data URIs are {inline} characters together, over "
-                    f"{limit}; send large inputs by URL"
-                ),
-            )
         deadline = time.monotonic() + settings.media_url_timeout_seconds
         errors = []
 
@@ -202,14 +190,14 @@ class GenerationService(BaseJobService):
                         data = await download_media_url(
                             value, deadline=deadline, max_bytes=MEDIA_MAX_BYTES[kind]
                         )
-                    elif output_url := OUTPUT_URL.match(value):
-                        data = self._read_output(*output_url.groups(), kind)
                     else:
                         data = _decode_data_uri(value, kind)
                     if kind == "image":
                         decoded = await asyncio.to_thread(decode_image, data)
                     else:
                         decoded = await asyncio.to_thread(probe_reference_media, data)
+                        if message := media_format_error(kind, decoded):
+                            raise ValueError(message)
                     loaded.append((data, decoded))
                 except MediaDownloadPolicyError as e:
                     raise HTTPException(status_code=400, detail=str(e))
@@ -236,33 +224,6 @@ class GenerationService(BaseJobService):
                 error(name, index, message)
         if errors:
             raise RequestValidationError(errors)
-
-    def _read_output(self, job_id: str, index: str, kind: str) -> bytes:
-        """The file of an earlier job's output, by the parts of its `url`."""
-        # A job's result path is set from submit on, so it says nothing about
-        # whether the job finished.
-        metadata = self.get_job_metadata(job_id)
-        result_path = self.get_job_result_path(job_id)
-        if (
-            metadata is None
-            or metadata["job_type"] != JobTypes.GENERATION.value
-            or metadata["status"] != "completed"
-            or result_path is None
-        ):
-            raise ValueError(f"job {job_id} has no completed result")
-        try:
-            outputs = read_manifest(result_path)
-        except FileNotFoundError:
-            raise ValueError(f"the outputs of job {job_id} are gone")
-        if int(index) >= len(outputs):
-            raise ValueError(f"job {job_id} has {len(outputs)} outputs")
-        output = outputs[int(index)]
-        if output["type"] != kind:
-            raise ValueError(f"output {index} of job {job_id} is not an {kind}")
-        try:
-            return (Path(result_path) / output["file"]).read_bytes()
-        except FileNotFoundError:
-            raise ValueError(f"the outputs of job {job_id} are gone")
 
     async def pre_process(self, request: GenerationRequest) -> GenerationRequest:
         request._prompt = request.model_prompt()
@@ -338,5 +299,13 @@ class GenerationService(BaseJobService):
             "fps": request.fps,
             "num_frames": num_frames,
             "duration": num_frames / request.fps,
-            "audio": request.AUDIO,
+            "audio": (
+                {
+                    "codec": probe.audio_codec,
+                    "sample_rate": probe.audio_sample_rate,
+                    "channels": probe.audio_channels,
+                }
+                if probe.audio_codec
+                else None
+            ),
         }

@@ -12,9 +12,6 @@ from pydantic import AfterValidator, ConfigDict, Field, PrivateAttr
 
 MAX_SEED = 2**31 - 1
 
-# An output's `url` on this server.
-OUTPUT_URL = re.compile(r"^/v1/jobs/([^/]+)/content/([0-9]+)$")
-
 MediaKind = Literal["image", "video", "audio"]
 # Per file, inline or fetched.
 MEDIA_MAX_BYTES: dict[str, int] = {
@@ -28,17 +25,9 @@ def _media_checker(kind: MediaKind, example: str):
     data_uri = re.compile(rf"^data:{kind}/[a-z0-9.+-]+;base64,", re.IGNORECASE)
 
     def check(value: str) -> str:
-        if (
-            value.startswith("https://")
-            or data_uri.match(value)
-            # Earlier outputs are images or videos.
-            or (kind != "audio" and OUTPUT_URL.match(value))
-        ):
+        if value.startswith("https://") or data_uri.match(value):
             return value
-        raise ValueError(
-            f"must be an https:// URL, a base64 data URI ({example})"
-            + (" or an earlier output's url" if kind != "audio" else "")
-        )
+        raise ValueError(f"must be an https:// URL or a base64 data URI ({example})")
 
     return AfterValidator(check)
 
@@ -49,9 +38,8 @@ Media = Annotated[
     Field(
         description=(
             "An `https://` URL, which the server fetches when the job is "
-            "submitted, or a data URI (`data:image/png;base64,…`). An earlier "
-            "output is passed by its `url`. PNG, JPEG or WebP, at most 30 MB per "
-            "image."
+            "submitted, or a data URI (`data:image/png;base64,…`). PNG, JPEG or "
+            "WebP, at most 30 MB per image."
         )
     ),
 ]
@@ -61,9 +49,9 @@ VideoMedia = Annotated[
     Field(
         description=(
             "An `https://` URL, which the server fetches when the job is "
-            "submitted, or a data URI (`data:video/mp4;base64,…`). An earlier "
-            "video output is passed by its `url`. MP4, MOV or another format "
-            "FFmpeg reads, with a frame rate; at most 50 MB per video."
+            "submitted, or a data URI (`data:video/mp4;base64,…`). MP4 or MOV, "
+            "H.264 or H.265 video, optionally with an AAC or MP3 audio track; at "
+            "most 50 MB."
         )
     ),
 ]
@@ -73,8 +61,8 @@ AudioMedia = Annotated[
     Field(
         description=(
             "An `https://` URL, which the server fetches when the job is "
-            "submitted, or a data URI (`data:audio/wav;base64,…`). WAV, MP3 or "
-            "another format FFmpeg reads, mono or stereo; at most 15 MB per clip."
+            "submitted, or a data URI (`data:audio/wav;base64,…`). WAV or MP3, "
+            "mono or stereo; at most 15 MB."
         )
     ),
 ]
@@ -122,14 +110,10 @@ class GenerationRequest(BaseRequest):
     # Hugging Face ID.
     MODEL_ID: ClassVar[str]
     OUTPUT_TYPE: ClassVar[Literal["image", "video"]]
-    # Whether the video has a soundtrack.
-    AUDIO: ClassVar[bool] = False
     # Fields holding media, alone or in a list.
     MEDIA_FIELDS: ClassVar[tuple[str, ...]] = ()
     # The kind of each media field that does not hold images.
     MEDIA_KINDS: ClassVar[dict[str, MediaKind]] = {}
-    # All data URIs of one request together, in characters, if limited.
-    INLINE_MEDIA_MAX_CHARS: ClassVar[int | None] = None
     # Whether the runner decodes the input images from their files. The
     # request then carries files rather than pixels to the device worker and
     # to the other ranks of a multi-host mesh: a decoded image can be a

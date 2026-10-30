@@ -314,7 +314,7 @@ templates:
 
 # MiniMax-H3 omni-reference-to-video-and-audio with the lightx2v Ref2VA Turbo 4-step adapter, on
 # one Blackhole Galaxy. Same layout as the FL2VA entry above, except that ref2va loads
-# transformer_ref/ instead of transformer/ and is served as lightx2v/minimax-h3-turbo-ref2va.
+# transformer_ref/ instead of transformer/ and is served as tenstorrent/minimax-h3-ref2va-lightx2v.
 - weights:
     - MiniMaxAI/MiniMax-H3-Ref2VA-LightX2V
   impl: tt_transformers
