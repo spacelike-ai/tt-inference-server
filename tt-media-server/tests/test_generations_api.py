@@ -1970,8 +1970,24 @@ def test_a_reported_enhancer_caption_is_a_valid_structured_prompt():
 
 @pytest.mark.parametrize(
     "fields",
-    [{}, {"prompt": "a poster", "structured_prompt": _CAPTION}, {"prompt": ""}],
-    ids=["neither", "both", "empty"],
+    [
+        {},
+        {"prompt": "a poster", "structured_prompt": _CAPTION},
+        {"prompt": ""},
+        {"prompt": None},
+        {"structured_prompt": None},
+        {"prompt": None, "structured_prompt": _CAPTION},
+        {"prompt": "a poster", "structured_prompt": None},
+    ],
+    ids=[
+        "neither",
+        "both",
+        "empty",
+        "null",
+        "null-caption",
+        "null-prompt",
+        "null-structured",
+    ],
 )
 def test_ideogram_takes_exactly_one_prompt(fields):
     with pytest.raises(ValidationError):
@@ -2210,6 +2226,22 @@ def test_ideogram_accepts_lowercase_colors():
     }
     request = Ideogram4Request(structured_prompt=caption)
     assert '"color_palette":["#FF2E88"]' in request.model_prompt()
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"prompt": None},
+        {"structured_prompt": None},
+        {"prompt": None, "structured_prompt": _CAPTION},
+    ],
+    ids=["prompt", "structured-prompt", "beside-a-caption"],
+)
+async def test_an_explicit_null_is_422(generations_app, body):
+    client, device = generations_app("tt-ideogram-4")
+    response = await client.post("/v1/generations/ideogram-ai/ideogram-4", json=body)
+    assert response.status_code == 422, response.text
+    assert not device.requests
 
 
 @requires_tt_metal_policy

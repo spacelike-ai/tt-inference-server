@@ -28,6 +28,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from pydantic.json_schema import SkipJsonSchema
 
 IdeogramRatio = Literal["1:1", "16:9", "9:16", "2:3"]
 IdeogramSize = Literal["2K"]
@@ -265,9 +266,8 @@ class Ideogram4Request(GenerationRequest):
     OUTPUT_TYPE = "image"
     PROMPT_ENHANCER = "ideogram"
 
-    prompt: Optional[str] = Field(
+    prompt: Union[Annotated[str, Field(min_length=1)], SkipJsonSchema[None]] = Field(
         default=None,
-        min_length=1,
         description=(
             "What to generate, in plain words. Ideogram 4 only works from a "
             "structured caption, so the server first rewrites the prompt into one "
@@ -280,7 +280,7 @@ class Ideogram4Request(GenerationRequest):
             "instead."
         ),
     )
-    structured_prompt: Optional[Ideogram4Caption] = Field(
+    structured_prompt: Union[Ideogram4Caption, SkipJsonSchema[None]] = Field(
         default=None,
         description=(
             f"At most {IDEOGRAM4_MAX_TEXT_TOKENS} tokens as the model reads it, "
@@ -320,7 +320,11 @@ class Ideogram4Request(GenerationRequest):
 
     @model_validator(mode="after")
     def _one_prompt(self):
-        if (self.prompt is None) == (self.structured_prompt is None):
+        # An explicit null counts as sent, as in the schema's oneOf.
+        if (self.prompt is None) == (self.structured_prompt is None) or {
+            "prompt",
+            "structured_prompt",
+        } <= self.model_fields_set:
             raise ValueError("exactly one of prompt and structured_prompt is required")
         return self
 
